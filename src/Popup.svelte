@@ -53,9 +53,12 @@
   onMount(() => {
     initSettings();
     reload();
-    const unlisten = listen("purser://refresh", () => {
+    const unlisten = listen("purser://refresh", async () => {
+      const data = await openTodos();
       view = "open";
-      reload();
+      todos = data;
+      selected = 0;
+      editing = null;
     });
     return () => {
       unlisten.then((f) => f());
@@ -83,10 +86,13 @@
 
   async function switchView(v: View) {
     if (view === v) return;
+    // fetch first, then commit view + data together so the old list never
+    // re-renders under the new view's grouping (visible intermediate state)
+    const data = v === "open" ? await openTodos() : await doneTodos();
     view = v;
+    todos = data;
     selected = 0;
     editing = null;
-    await reload();
   }
 
   function startDueEdit(idx: number, todo: Todo) {
@@ -205,11 +211,11 @@
         {view === "open" ? "Nothing to do 🎉" : "Nothing done yet."}
       </p>
     {/if}
-    {#each groups as group}
+    {#each groups as group (group.topic)}
       {#if view === "open"}
         <h2>{group.topic}</h2>
       {/if}
-      {#each group.todos as todo}
+      {#each group.todos as todo (todo.id)}
         {@const idx = flat.indexOf(todo)}
         <div
           class="todo"
