@@ -248,7 +248,7 @@
               spellcheck="false"
             />
           {:else}
-            <span class="text">{todo.text}</span>
+            <span class="text" title={todo.text}>{todo.text}</span>
           {/if}
           {#if editing?.id === todo.id && editing.field === "due"}
             <input
@@ -421,6 +421,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-height: 1.5em;
+    transition: max-height 0.15s ease;
+  }
+  /* the selected todo expands to show its full text */
+  .todo.selected .text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-height: 10em;
   }
   .due {
     font-size: 12px;
