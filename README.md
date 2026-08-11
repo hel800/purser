@@ -1,4 +1,4 @@
-# Purser
+<img src="src/assets/purser-wordmark.svg" alt="Purser" width="260">
 
 A keyboard-driven todo app that lives in the system tray. Built with Tauri 2, Svelte 5 and SQLite.
 
