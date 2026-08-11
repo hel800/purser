@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Keyboard-driven tray todo app"
 authors = ["Sebastian Schaefer"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "purser_lib"
