@@ -1,0 +1,26 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #1b1d23;
+  --bg-raised: #24272f;
+  --border: #34384299;
+  --text: #e8eaf0;
+  --text-dim: #9aa0ad;
+  --accent: #6ea8fe;
+  --danger: #f28b82;
+  --ok: #81c995;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
