@@ -60,6 +60,13 @@ async function getOrCreateCategory(d: Database, name: string): Promise<number | 
   return res.lastInsertId ?? null;
 }
 
+export async function listCategories(): Promise<Category[]> {
+  const d = await getDb();
+  return d.select<Category[]>(
+    "SELECT id, name, color FROM categories ORDER BY name COLLATE NOCASE"
+  );
+}
+
 export async function addTodo(
   text: string,
   topic: string | null,
