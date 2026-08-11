@@ -80,6 +80,11 @@ fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
     state.lock().unwrap().clone()
 }
 
+#[tauri::command]
+fn open_about(app: AppHandle) {
+    show_about(&app);
+}
+
 fn toggle_quick_add(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("quickadd") {
         if win.is_visible().unwrap_or(false) {
@@ -122,6 +127,14 @@ fn toggle_popup(app: &AppHandle) {
             let _ = win.set_focus();
             let _ = win.emit("purser://refresh", ());
         }
+    }
+}
+
+fn show_about(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("about") {
+        let _ = win.center();
+        let _ = win.show();
+        let _ = win.set_focus();
     }
 }
 
@@ -216,12 +229,13 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
         ))
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:purser.db", migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![get_settings])
+        .invoke_handler(tauri::generate_handler![get_settings, open_about])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
             if first_run {
@@ -281,6 +295,7 @@ pub fn run() {
                         &MenuItem::with_id(app, "list", "Show todos\tCtrl+Alt+L", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
+                        &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
                         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
                     ],
                 )?;
@@ -325,6 +340,7 @@ pub fn run() {
                             let _ = app.emit("purser://settings-changed", snapshot);
                         }
                         "quit" => app.exit(0),
+                        "about" => show_about(app),
                         _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {

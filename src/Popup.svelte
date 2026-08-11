@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, type Todo } from "./lib/db";
   import { formatDue, isOverdue, parseDueDate } from "./lib/parse";
@@ -89,6 +90,10 @@
     // otherwise it briefly reappears without the slide-out class
     await reload();
     leaving = null;
+  }
+
+  function openAbout() {
+    invoke("open_about");
   }
 
   async function switchView(v: View) {
@@ -339,7 +344,9 @@
     <span>
       ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date" : "restore · Del remove"} · Esc close
     </span>
-    <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
+    <button class="wordmark-btn" onclick={openAbout} title="About Purser">
+      <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
+    </button>
   </footer>
 </main>
 
@@ -559,9 +566,20 @@
     color: var(--text-dim);
     border-top: 1px solid var(--border);
   }
+  .wordmark-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    flex-shrink: 0;
+    line-height: 0;
+    cursor: pointer;
+  }
   .wordmark {
     height: 9px;
     opacity: 0.75;
-    flex-shrink: 0;
+    display: block;
+  }
+  .wordmark-btn:hover .wordmark {
+    opacity: 1;
   }
 </style>

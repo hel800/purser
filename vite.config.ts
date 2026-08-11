@@ -13,11 +13,16 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  define: {
+    // captured when the frontend is built (dev server start or vite build)
+    __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+  },
   build: {
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "index.html"),
         quickadd: resolve(__dirname, "quickadd.html"),
+        about: resolve(__dirname, "about.html"),
       },
     },
   },
