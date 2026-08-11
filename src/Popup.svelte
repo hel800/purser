@@ -2,7 +2,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, type Todo } from "./lib/db";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, type Todo } from "./lib/db";
   import { formatDue, isOverdue, parseDueDate } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
@@ -14,10 +14,10 @@
   let todos: Todo[] = $state([]);
   let selected = $state(0);
   let leaving: { id: number; dir: "left" | "right" } | null = $state(null);
-  let editing: { id: number; value: string } | null = $state(null);
+  let editing: { id: number; value: string; field: "due" | "text" } | null = $state(null);
 
   let editPreview = $derived.by(() => {
-    if (!editing) return "";
+    if (!editing || editing.field !== "due") return "";
     const v = editing.value.trim();
     if (!v) return "no due date";
     const iso = parseDueDate(v);
@@ -89,10 +89,16 @@
     await reload();
   }
 
-  function startEdit(idx: number, todo: Todo) {
+  function startDueEdit(idx: number, todo: Todo) {
     if (leaving) return;
     selected = idx;
-    editing = { id: todo.id, value: "" };
+    editing = { id: todo.id, value: "", field: "due" };
+  }
+
+  function startTextEdit(idx: number, todo: Todo) {
+    if (leaving) return;
+    selected = idx;
+    editing = { id: todo.id, value: todo.text, field: "text" };
   }
 
   async function onEditKeydown(e: KeyboardEvent) {
@@ -102,9 +108,14 @@
       editing = null;
     } else if (e.key === "Enter") {
       const v = editing.value.trim();
-      const iso = v ? parseDueDate(v) : null;
-      if (v && !iso) return; // not parseable yet — keep typing
-      await updateDue(editing.id, iso);
+      if (editing.field === "due") {
+        const iso = v ? parseDueDate(v) : null;
+        if (v && !iso) return; // not parseable yet — keep typing
+        await updateDue(editing.id, iso);
+      } else {
+        if (!v) return; // a todo needs text — Esc to cancel
+        await updateText(editing.id, v);
+      }
       editing = null;
       await reload();
     }
@@ -133,12 +144,20 @@
       case "Enter":
         await toggleSelected();
         break;
+      case "d": {
+        const t = flat[selected];
+        if (t && view === "open") {
+          e.preventDefault();
+          startDueEdit(selected, t);
+        }
+        break;
+      }
       case "e":
       case "F2": {
         const t = flat[selected];
-        if (t && view === "open" && !leaving) {
+        if (t && view === "open") {
           e.preventDefault();
-          editing = { id: t.id, value: "" };
+          startTextEdit(selected, t);
         }
         break;
       }
@@ -220,8 +239,18 @@
               {view === "done" ? "✓" : "○"}
             {/if}
           </button>
-          <span class="text">{todo.text}</span>
-          {#if editing?.id === todo.id}
+          {#if editing?.id === todo.id && editing.field === "text"}
+            <input
+              class="edit text-edit"
+              bind:value={editing.value}
+              onkeydown={onEditKeydown}
+              use:focusInput
+              spellcheck="false"
+            />
+          {:else}
+            <span class="text">{todo.text}</span>
+          {/if}
+          {#if editing?.id === todo.id && editing.field === "due"}
             <input
               class="edit"
               bind:value={editing.value}
@@ -243,7 +272,7 @@
                 title={todo.due_at ? "Edit due date" : "Add due date"}
                 onclick={(e) => {
                   e.stopPropagation();
-                  startEdit(idx, todo);
+                  startDueEdit(idx, todo);
                 }}
               >
                 ✎
@@ -257,7 +286,7 @@
 
   <footer>
     <span>
-      ↑↓ navigate · Enter {view === "open" ? "done · E due date" : "restore · Del remove"} · Esc close
+      ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date" : "restore · Del remove"} · Esc close
     </span>
     <img class="wordmark" src={wordmark} alt="Purser" />
   </footer>
@@ -376,6 +405,11 @@
   }
   .edit:focus {
     border-color: var(--accent);
+  }
+  .text-edit {
+    flex: 1;
+    width: auto;
+    font-size: inherit;
   }
   .preview {
     font-size: 12px;

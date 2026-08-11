@@ -10,7 +10,8 @@ A keyboard-driven todo app that lives in the system tray. Built with Tauri 2, Sv
 | `Ctrl+Alt+L` | Todo list popup above the tray/clock (global) |
 | `Enter` | Quick-add: save · List: tick selected todo (moves it to Done) |
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
-| `E` or `F2` | Edit due date of the selected open todo (natural language, empty removes it) |
+| `E` or `F2` | Edit the text of the selected open todo |
+| `D` | Edit due date of the selected open todo (natural language, empty removes it) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
 | `Esc` (or clicking elsewhere) | Dismiss popup |

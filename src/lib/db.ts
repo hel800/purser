@@ -50,6 +50,11 @@ export async function markOpen(id: number): Promise<void> {
   await d.execute("UPDATE todos SET done_at = NULL WHERE id = $1", [id]);
 }
 
+export async function updateText(id: number, text: string): Promise<void> {
+  const d = await getDb();
+  await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
+}
+
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);
