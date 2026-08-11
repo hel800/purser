@@ -18,8 +18,9 @@
     initSettings();
     inputEl.focus();
     const unlisten = listen("purser://focus", () => {
-      value = "";
+      // keep any half-typed todo; put the caret at its end
       inputEl.focus();
+      inputEl.setSelectionRange(value.length, value.length);
     });
     return () => {
       unlisten.then((f) => f());
@@ -28,8 +29,11 @@
 
   async function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      value = "";
       await win.hide();
+    } else if (e.key === "Backspace" && e.ctrlKey) {
+      // default Ctrl+Backspace only deletes a word; clear everything
+      e.preventDefault();
+      value = "";
     } else if (e.key === "Enter" && parsed.text.length > 0) {
       await addTodo(parsed.text, parsed.topic, parsed.dueAt);
       value = "";
@@ -61,9 +65,7 @@
     {#if parsed.topic}
       <span class="chip topic">#{parsed.topic}</span>
     {/if}
-    {#if !parsed.dueAt && !parsed.topic}
-      <span class="muted">Enter to save · Esc to dismiss</span>
-    {/if}
+    <span class="muted">Enter save · Esc hide · Ctrl+⌫ clear</span>
   </div>
 </main>
 
