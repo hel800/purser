@@ -12,6 +12,28 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 const QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
 const LIST_SHORTCUT: &str = "ctrl+alt+l";
 
+const TRAY_DARK: tauri::image::Image<'static> = tauri::include_image!("./icons/tray-dark-32.png");
+
+/// Whether the Windows taskbar (and tray area) is in light mode. The taskbar
+/// follows the *system* theme (`SystemUsesLightTheme`), which can differ from
+/// the app theme (`AppsUseLightTheme`) in Custom personalization mode, so the
+/// registry is read directly. A missing value defaults to a dark taskbar.
+#[cfg(windows)]
+fn taskbar_is_light() -> bool {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        .and_then(|key| key.get_value("SystemUsesLightTheme"))
+        .map(|value: u32| value == 1)
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn taskbar_is_light() -> bool {
+    false
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Settings {
     hour24: bool,
@@ -215,7 +237,11 @@ pub fn run() {
                 let hour24_check = hour24_item.clone();
 
                 TrayIconBuilder::with_id("main")
-                    .icon(app.default_window_icon().unwrap().clone())
+                    .icon(if taskbar_is_light() {
+                        TRAY_DARK
+                    } else {
+                        app.default_window_icon().unwrap().clone()
+                    })
                     .tooltip("Purser")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
