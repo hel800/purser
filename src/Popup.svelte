@@ -6,7 +6,7 @@
   import { formatDue, isOverdue, parseDueDate } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
-  import wordmark from "./assets/purser-wordmark.svg";
+  import wordmark from "./assets/purser-wordmark.png";
 
   type View = "open" | "done";
 
@@ -339,7 +339,7 @@
     <span>
       ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date" : "restore · Del remove"} · Esc close
     </span>
-    <img class="wordmark" src={wordmark} alt="Purser" />
+    <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
   </footer>
 </main>
 

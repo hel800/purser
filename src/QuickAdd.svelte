@@ -6,7 +6,7 @@
   import { addTodo, listCategories, type Category } from "./lib/db";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
-  import wordmark from "./assets/purser-wordmark.svg";
+  import wordmark from "./assets/purser-wordmark.png";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
@@ -124,7 +124,7 @@
   <div class="titlebar">
     <Logo size={18} />
     <span>Add new todo</span>
-    <img class="wordmark" src={wordmark} alt="Purser" />
+    <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
   </div>
   <!-- svelte-ignore a11y_autofocus -->
   <div class="qawrap">
