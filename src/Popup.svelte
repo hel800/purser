@@ -2,7 +2,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, type Todo } from "./lib/db";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, type Todo } from "./lib/db";
   import { formatDue, isOverdue, parseDueDate } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
@@ -15,6 +15,7 @@
   let selected = $state(0);
   let leaving: { id: number; dir: "left" | "right" } | null = $state(null);
   let editing: { id: number; value: string; field: "due" | "text" } | null = $state(null);
+  let catEdit: { id: number; name: string; color: string } | null = $state(null);
 
   let editPreview = $derived.by(() => {
     if (!editing || editing.field !== "due") return "";
@@ -27,22 +28,28 @@
   const win = getCurrentWindow();
 
   interface Group {
+    id: number | null;
     topic: string;
+    color: string | null;
     todos: Todo[];
   }
 
   let groups: Group[] = $derived.by(() => {
-    if (view === "done") return todos.length ? [{ topic: "Done", todos }] : [];
-    const map = new Map<string, Todo[]>();
+    if (view === "done") return todos.length ? [{ id: null, topic: "Done", color: null, todos }] : [];
+    const map = new Map<number, Group>();
     for (const t of todos) {
-      const key = t.topic ?? "";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(t);
+      const key = t.category_id ?? -1;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: t.category_id,
+          topic: t.category_name || "No topic",
+          color: t.category_color,
+          todos: [],
+        });
+      }
+      map.get(key)!.todos.push(t);
     }
-    return [...map.entries()].map(([topic, list]) => ({
-      topic: topic || "No topic",
-      todos: list,
-    }));
+    return [...map.values()];
   });
 
   async function reload() {
@@ -131,8 +138,31 @@
     node.focus();
   }
 
+  function startCatEdit(group: Group) {
+    if (!group.id || catEdit) return;
+    catEdit = { id: group.id, name: group.topic, color: group.color ?? "#6ea8fe" };
+  }
+
+  async function saveCatEdit() {
+    if (!catEdit) return;
+    const { id, name, color } = catEdit;
+    catEdit = null;
+    await updateCategory(id, name, color);
+    await reload();
+  }
+
+  function cancelCatEdit() {
+    catEdit = null;
+  }
+
+  async function onCatEditKeydown(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === "Enter") await saveCatEdit();
+    else if (e.key === "Escape") cancelCatEdit();
+  }
+
   async function onKeydown(e: KeyboardEvent) {
-    if (editing) return;
+    if (editing || catEdit) return;
     switch (e.key) {
       case "Escape":
         await win.hide();
@@ -211,10 +241,25 @@
         {view === "open" ? "Nothing to do 🎉" : "Nothing done yet."}
       </p>
     {/if}
-    {#each groups as group (group.topic)}
-      {#if view === "open"}
-        <h2>{group.topic}</h2>
-      {/if}
+{#each groups as group (group.id ?? "empty")}
+        {#if view === "open"}
+          <h2>
+            {#if group.id}
+              <span class="dot" style:background={group.color ?? "#6ea8fe"}></span>
+            {/if}
+            {#if catEdit?.id === group.id}
+              <input class="cat-edit" bind:value={catEdit.name} onkeydown={onCatEditKeydown} use:focusInput spellcheck="false" />
+              <input class="cat-color" type="color" bind:value={catEdit.color} onkeydown={(e) => e.stopPropagation()} title="Category color" />
+              <button class="cat-confirm" title="Save" onclick={saveCatEdit}>✓</button>
+              <button class="pen" title="Cancel" onclick={cancelCatEdit}>✕</button>
+            {:else}
+              {group.topic}
+              {#if group.id}
+                <button class="pen" title="Edit category" onclick={() => startCatEdit(group)}>✎</button>
+              {/if}
+            {/if}
+          </h2>
+        {/if}
       {#each group.todos as todo (todo.id)}
         {@const idx = flat.indexOf(todo)}
         <div
@@ -336,11 +381,66 @@
     padding: 6px 0;
   }
   h2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--accent);
-    padding: 10px 14px 4px;
+    padding: 4px 14px;
+    min-height: 34px;
+    box-sizing: border-box;
+    line-height: 1;
+  }
+  h2 .pen {
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  h2:hover .pen {
+    opacity: 0.8;
+  }
+  h2 .pen:hover {
+    opacity: 1;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 1px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cat-edit {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--accent);
+    font: inherit;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: normal;
+    padding: 1px 6px;
+    width: 140px;
+    outline: none;
+  }
+  .cat-edit:focus {
+    border-color: var(--accent);
+  }
+  .cat-color {
+    width: 24px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+  .cat-confirm {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--ok);
+    cursor: pointer;
   }
   .todo {
     display: flex;
