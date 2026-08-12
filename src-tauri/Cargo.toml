@@ -1,6 +1,6 @@
 [package]
 name = "purser"
-version = "0.1.0"
+version = "0.2.0"
 description = "Keyboard-driven tray todo app"
 authors = ["Sebastian Schaefer"]
 edition = "2021"
