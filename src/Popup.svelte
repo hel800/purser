@@ -3,8 +3,8 @@
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, type Todo } from "./lib/db";
-  import { formatDue, isOverdue, parseDueDate } from "./lib/parse";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, listCategories, type Todo, type Category } from "./lib/db";
+  import { formatDue, isOverdue, parseDueDate, isValidCategoryName } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
@@ -17,6 +17,16 @@
   let leaving: { id: number; dir: "left" | "right" } | null = $state(null);
   let editing: { id: number; value: string; field: "due" | "text" } | null = $state(null);
   let catEdit: { id: number; name: string; color: string } | null = $state(null);
+  let allCategories: Category[] = $state([]);
+
+  // valid = tag-compatible charset and not a duplicate of another category
+  let catNameValid = $derived.by(() => {
+    if (!catEdit) return true;
+    const name = catEdit.name.trim();
+    if (!isValidCategoryName(name)) return false;
+    const lower = name.toLowerCase();
+    return !allCategories.some((c) => c.id !== catEdit!.id && c.name.toLowerCase() === lower);
+  });
 
   let editPreview = $derived.by(() => {
     if (!editing || editing.field !== "due") return "";
@@ -67,6 +77,7 @@
       todos = data;
       selected = 0;
       editing = null;
+      catEdit = null;
     });
     return () => {
       unlisten.then((f) => f());
@@ -105,6 +116,7 @@
     todos = data;
     selected = 0;
     editing = null;
+    catEdit = null;
   }
 
   function startDueEdit(idx: number, todo: Todo) {
@@ -143,14 +155,23 @@
     node.focus();
   }
 
+  // clicking anywhere outside a todo text/due editor discards the edit,
+  // matching the category editor's behavior
+  function cancelEdit() {
+    editing = null;
+  }
+
   function startCatEdit(group: Group) {
     if (!group.id || catEdit) return;
+    // fresh list for duplicate detection (quick-add may have added categories)
+    listCategories().then((c) => (allCategories = c));
     catEdit = { id: group.id, name: group.topic, color: group.color ?? "#6ea8fe" };
   }
 
   async function saveCatEdit() {
-    if (!catEdit) return;
-    const { id, name, color } = catEdit;
+    if (!catEdit || !catNameValid) return;
+    const { id, color } = catEdit;
+    const name = catEdit.name.trim();
     catEdit = null;
     await updateCategory(id, name, color);
     await reload();
@@ -160,6 +181,12 @@
     catEdit = null;
   }
 
+  // clicking anywhere outside the editor discards the edit (old name stays)
+  function onCatEditFocusout(e: FocusEvent) {
+    const wrap = e.currentTarget as HTMLElement;
+    if (!wrap.contains(e.relatedTarget as Node | null)) cancelCatEdit();
+  }
+
   async function onCatEditKeydown(e: KeyboardEvent) {
     e.stopPropagation();
     if (e.key === "Enter") await saveCatEdit();
@@ -167,7 +194,12 @@
   }
 
   async function onKeydown(e: KeyboardEvent) {
-    if (editing || catEdit) return;
+    if (editing) return;
+    if (catEdit) {
+      // never let an orphaned category edit lock the keyboard
+      if (e.key === "Escape") cancelCatEdit();
+      return;
+    }
     switch (e.key) {
       case "Escape":
         await win.hide();
@@ -253,10 +285,19 @@
               <span class="dot" style:background={group.color ?? "#6ea8fe"}></span>
             {/if}
             {#if catEdit?.id === group.id}
-              <input class="cat-edit" bind:value={catEdit.name} onkeydown={onCatEditKeydown} use:focusInput spellcheck="false" />
-              <input class="cat-color" type="color" bind:value={catEdit.color} onkeydown={(e) => e.stopPropagation()} title="Category color" />
-              <button class="cat-confirm" title="Save" onclick={saveCatEdit}>✓</button>
-              <button class="pen" title="Cancel" onclick={cancelCatEdit}>✕</button>
+              <span class="cat-editor" onfocusout={onCatEditFocusout}>
+                <input
+                  class="cat-edit"
+                  class:invalid={!catNameValid}
+                  bind:value={catEdit.name}
+                  onkeydown={onCatEditKeydown}
+                  use:focusInput
+                  spellcheck="false"
+                />
+                <input class="cat-color" type="color" bind:value={catEdit.color} onkeydown={(e) => e.stopPropagation()} title="Category color" />
+                <button class="cat-confirm" title={catNameValid ? "Save" : "Invalid or duplicate name"} disabled={!catNameValid} onclick={saveCatEdit}>✓</button>
+                <button class="cat-cancel" title="Cancel (Esc)" onclick={cancelCatEdit}>✕</button>
+              </span>
             {:else}
               {group.topic}
               {#if group.id}
@@ -300,17 +341,33 @@
               class="edit text-edit"
               bind:value={editing.value}
               onkeydown={onEditKeydown}
+              onfocusout={cancelEdit}
               use:focusInput
               spellcheck="false"
             />
           {:else}
-            <span class="text" title={todo.text}>{todo.text}</span>
+            <span class="textwrap">
+              <span class="text" title={todo.text}>{todo.text}</span>
+              {#if view === "open"}
+                <button
+                  class="pen"
+                  title="Edit todo (E)"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    startTextEdit(idx, todo);
+                  }}
+                >
+                  ✎
+                </button>
+              {/if}
+            </span>
           {/if}
           {#if editing?.id === todo.id && editing.field === "due"}
             <input
               class="edit"
               bind:value={editing.value}
               onkeydown={onEditKeydown}
+              onfocusout={cancelEdit}
               use:focusInput
               placeholder="friday 5pm · empty = none"
               spellcheck="false"
@@ -433,6 +490,31 @@
   .cat-edit:focus {
     border-color: var(--accent);
   }
+  .cat-editor {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cat-edit.invalid,
+  .cat-edit.invalid:focus {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .cat-confirm:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .cat-cancel {
+    background: none;
+    border: none;
+    padding: 0 2px;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .cat-cancel:hover {
+    color: var(--danger);
+  }
   .cat-color {
     width: 24px;
     height: 20px;
@@ -453,6 +535,10 @@
     display: flex;
     gap: 10px;
     padding: 7px 14px;
+    /* 20px content line + 2×7px padding: tall enough for both the normal
+       text line (~19.6px) and the 20px edit inputs, so the height never
+       changes when entering/leaving edit mode */
+    min-height: 34px;
     align-items: baseline;
     cursor: default;
   }
@@ -497,8 +583,8 @@
     cursor: pointer;
     opacity: 0;
   }
-  .todo:hover .pen,
-  .todo.selected .pen {
+  /* mouse affordance only — keyboard users have the E/D shortcuts */
+  .todo:hover .pen {
     opacity: 0.8;
   }
   .pen:hover {
@@ -512,7 +598,11 @@
     color: var(--text);
     font: inherit;
     font-size: 12px;
-    padding: 2px 6px;
+    /* same total height as the text line it replaces, and centered instead
+       of baseline-aligned so its lower text baseline can't grow the row */
+    height: 20px;
+    padding: 0 6px;
+    align-self: center;
     width: 150px;
     outline: none;
   }
@@ -529,8 +619,17 @@
     color: var(--accent);
     white-space: nowrap;
   }
-  .text {
+  /* flexible middle region: text takes its natural width so the pen
+     sits directly after the words, not at the far right edge */
+  .textwrap {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
