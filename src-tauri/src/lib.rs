@@ -158,65 +158,21 @@ pub fn run() {
     let migrations = vec![
         Migration {
             version: 1,
-            description: "create todos table",
-            sql: "CREATE TABLE IF NOT EXISTS todos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT NOT NULL,
-                topic TEXT,
-                due_at TEXT,
-                created_at TEXT NOT NULL,
-                done_at TEXT
-              );",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 2,
-            description: "create categories table",
+            description: "create schema",
             sql: "CREATE TABLE IF NOT EXISTS categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
                     color TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                  );
+                  CREATE TABLE IF NOT EXISTS todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    due_at TEXT,
+                    created_at TEXT NOT NULL,
+                    done_at TEXT,
+                    category_id INTEGER
                   );",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 3,
-            description: "add category_id to todos",
-            sql: "ALTER TABLE todos ADD COLUMN category_id INTEGER;",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 4,
-            description: "backfill categories from existing topics",
-            sql: "INSERT INTO categories (name, color, created_at)
-                  SELECT topic,
-                    CASE (ROW_NUMBER() OVER (ORDER BY topic) - 1) % 8
-                      WHEN 0 THEN '#6ea8fe'
-                      WHEN 1 THEN '#81c995'
-                      WHEN 2 THEN '#f6b26b'
-                      WHEN 3 THEN '#b48cf2'
-                      WHEN 4 THEN '#f28b82'
-                      WHEN 5 THEN '#4dd0e1'
-                      WHEN 6 THEN '#f48fb1'
-                      ELSE '#ffd54f'
-                    END,
-                    datetime('now')
-                  FROM (SELECT DISTINCT topic FROM todos WHERE topic IS NOT NULL AND trim(topic) != '');",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 5,
-            description: "link todos to categories",
-            sql: "UPDATE todos
-                  SET category_id = (SELECT id FROM categories WHERE categories.name = todos.topic)
-                  WHERE topic IS NOT NULL AND trim(topic) != '';",
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 6,
-            description: "drop obsolete topic column",
-            sql: "ALTER TABLE todos DROP COLUMN topic;",
             kind: MigrationKind::Up,
         },
     ];
