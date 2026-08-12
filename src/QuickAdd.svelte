@@ -11,10 +11,20 @@
   let value = $state("");
   let inputEl: HTMLInputElement;
   let caret = $state(0);
+  let scrollLeft = $state(0);
   let categories = $state<Category[]>([]);
   let active = $state(0);
   let suppressSuggest = $state(false);
   let parsed = $derived(parseTodo(value));
+
+  // Mirror the input's caret and horizontal scroll into state. Fired on
+  // input, clicks, Home/End/arrow moves (selectionchange) and scrolling —
+  // everything downstream (tag, suggestions, ghost) derives from these.
+  function syncCaret() {
+    if (!inputEl) return;
+    caret = inputEl.selectionStart ?? value.length;
+    scrollLeft = inputEl.scrollLeft;
+  }
 
   // The `#tag` fragment currently being typed, anchored at the caret.
   let tag = $derived.by(() => {
@@ -30,7 +40,11 @@
   let suggestions = $derived.by(() => {
     if (!tag || !tag.partial) return [];
     const p = tag.partial.toLowerCase();
-    return categories.filter((c) => c.name.toLowerCase().startsWith(p)).slice(0, 6);
+    // an exact match needs no completion — offering it would make the keys
+    // below intercept navigation while nothing visible is suggested
+    return categories
+      .filter((c) => c.name.toLowerCase().startsWith(p) && c.name.toLowerCase() !== p)
+      .slice(0, 6);
   });
 
   // The grayed-out completion shown inline after the caret.
@@ -69,26 +83,29 @@
     initSettings();
     loadCategories();
     inputEl.focus();
+    document.addEventListener("selectionchange", syncCaret);
     const unlisten = listen("purser://focus", () => {
       loadCategories();
       // keep any half-typed todo; put the caret at its end
       inputEl.focus();
       inputEl.setSelectionRange(value.length, value.length);
-      caret = value.length;
+      syncCaret();
     });
     return () => {
+      document.removeEventListener("selectionchange", syncCaret);
       unlisten.then((f) => f());
     };
   });
 
   function onInput() {
-    caret = inputEl.selectionStart ?? value.length;
+    syncCaret();
     active = 0;
     suppressSuggest = false;
   }
 
   async function onKeydown(e: KeyboardEvent) {
-    if (suggestions.length > 0) {
+    // only intercept keys while a completion is actually visible
+    if (ghost) {
       if (e.key === "Tab" || e.key === "ArrowRight") {
         e.preventDefault();
         complete();
@@ -133,11 +150,12 @@
       bind:value
       oninput={onInput}
       onkeydown={onKeydown}
+      onscroll={syncCaret}
       placeholder="pay rent friday 5pm #finance"
       spellcheck="false"
       autofocus
     />
-    <span class="ghost" aria-hidden="true">
+    <span class="ghost" aria-hidden="true" style="transform: translateX({-scrollLeft}px)">
       <span class="ghost-typed">{value}</span>{#if ghost}<span class="ghost-suffix">{ghost}</span>{/if}
     </span>
   </div>
@@ -181,6 +199,8 @@
     outline: none;
     color: transparent;
     caret-color: var(--text);
+    /* must render with exactly the same metrics as the ghost overlay */
+    font-family: inherit;
     font-size: 20px;
     line-height: 1.15;
     width: 100%;
@@ -194,14 +214,18 @@
   }
   .qawrap {
     position: relative;
+    /* clip the ghost when it is shifted left to follow the input's scroll */
+    overflow: hidden;
   }
   .ghost {
     position: absolute;
     left: 0;
     top: 0;
+    font-family: inherit;
     font-size: 20px;
     line-height: 1.15;
-    white-space: nowrap;
+    /* pre, not nowrap: consecutive spaces must occupy the same width as in the input */
+    white-space: pre;
     pointer-events: none;
     color: var(--text-dim);
     opacity: 0.6;
