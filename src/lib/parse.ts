@@ -74,3 +74,29 @@ export function formatDue(iso: string | null): string {
 export function isOverdue(iso: string | null): boolean {
   return iso !== null && new Date(iso).getTime() < Date.now();
 }
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * Urgency of a due date:
+ * - "overdue" — the moment has passed (red)
+ * - "soon" — later today, or on the next working day (Mon–Fri) before 12:00 (yellow)
+ * - null — anything further out
+ */
+export function dueStatus(iso: string | null): "overdue" | "soon" | null {
+  if (!iso) return null;
+  const due = new Date(iso);
+  const now = new Date();
+  if (due.getTime() < now.getTime()) return "overdue";
+  if (sameDay(due, now)) return "soon";
+  const nextWorkday = new Date(now);
+  do {
+    nextWorkday.setDate(nextWorkday.getDate() + 1);
+  } while (nextWorkday.getDay() === 0 || nextWorkday.getDay() === 6);
+  if (sameDay(due, nextWorkday) && due.getHours() < 12) return "soon";
+  return null;
+}

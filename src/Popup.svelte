@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, isOverdue, parseDueDate, isValidCategoryName } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, isValidCategoryName } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
@@ -375,7 +375,8 @@
             <span class="preview">{editPreview}</span>
           {:else}
             {#if todo.due_at}
-              <span class="due" class:overdue={view === "open" && isOverdue(todo.due_at)}>
+              {@const status = view === "open" ? dueStatus(todo.due_at) : null}
+              <span class="due" class:overdue={status === "overdue"} class:soon={status === "soon"}>
                 {formatDue(todo.due_at)}
               </span>
             {/if}
@@ -649,6 +650,9 @@
   }
   .due.overdue {
     color: var(--danger);
+  }
+  .due.soon {
+    color: var(--warn);
   }
   .empty {
     color: var(--text-dim);
