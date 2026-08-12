@@ -2,6 +2,12 @@
 
 A keyboard-driven todo app that lives in the system tray. Built with Tauri 2, Svelte 5 and SQLite.
 
+## Install
+
+Download the latest `Purser_x.y.z_x64-setup.exe` from the
+[Releases](https://github.com/hel800/purser/releases) page and run it
+(Windows 10/11 x64; WebView2 is bootstrapped automatically if missing).
+
 ## Usage
 
 | Shortcut | Action |
@@ -9,6 +15,8 @@ A keyboard-driven todo app that lives in the system tray. Built with Tauri 2, Sv
 | `Ctrl+Alt+N` | Quick-add popup (global) |
 | `Ctrl+Alt+L` | Todo list popup above the tray/clock (global) |
 | `Enter` | Quick-add: save · List: tick selected todo (moves it to Done) |
+| `Tab` / `→` | Quick-add: accept the inline category suggestion |
+| `Ctrl+⌫` | Quick-add: clear the input |
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
 | `E` or `F2` | Edit the text of the selected open todo |
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
@@ -27,7 +35,7 @@ Left-clicking the tray icon also opens the list; right-click shows a menu.
 
 ### Quick-add syntax
 
-One line, natural language — dates and topics are parsed as you type:
+One line, natural language — dates and categories are parsed as you type:
 
 ```
 pay rent friday 5pm #finance
@@ -36,7 +44,19 @@ water plants
 ```
 
 - Dates/times are parsed with [chrono-node](https://github.com/wanasit/chrono) (`friday 5pm`, `tomorrow`, `in 2 weeks`, `Aug 20`, …)
-- `#word` becomes the todo's topic; the list groups by topic, ordered by due date
+- `#word` assigns a category (created on the fly); existing category names
+  autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
+- A half-typed todo survives closing the popup and is still there when it reopens
+
+### Categories and due dates
+
+- The list groups todos by color-coded category, ordered by due date within
+  each group; todos without a category come last
+- Hover a category header and click the pencil to rename it or change its
+  color (names must stay `#tag`-compatible: letters, digits, `_`, `-`)
+- Hover a todo row for pencils to edit its text and due date by mouse
+- Due-date colors: **red** = overdue, **yellow** = due later today or on the
+  next working day before 12:00
 
 ## Data
 
