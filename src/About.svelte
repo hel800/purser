@@ -25,7 +25,8 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<main>
+<main data-tauri-drag-region>
+  <button class="close" title="Close (Esc)" onclick={() => getCurrentWindow().hide()}>✕</button>
   <img class="wordmark" src={wordmark} alt="Purser" width="160" height="24" />
   <p class="version">Version {version}</p>
   <p class="meta">MIT License · Released {released}</p>
@@ -34,6 +35,7 @@
 
 <style>
   main {
+    position: relative;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -41,6 +43,20 @@
     justify-content: center;
     gap: 10px;
     border: 1px solid var(--border);
+  }
+  .close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .close:hover {
+    color: var(--text);
   }
   .wordmark {
     height: 24px;

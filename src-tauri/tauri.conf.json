@@ -44,7 +44,7 @@
         "height": 230,
         "center": true,
         "visible": false,
-        "theme": "Dark",
+        "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false
