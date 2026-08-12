@@ -7,6 +7,15 @@ export interface ParsedTodo {
   dueAt: string | null; // ISO string
 }
 
+/** Characters allowed in a `#tag` — the single source of truth, shared by
+ *  the quick-add parser/autocomplete and category rename validation. */
+export const TAG_CHARS = "[\\p{L}\\p{N}_-]";
+
+/** True when a category name can round-trip through quick-add's `#tag` syntax. */
+export function isValidCategoryName(name: string): boolean {
+  return new RegExp(`^${TAG_CHARS}+$`, "u").test(name);
+}
+
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance" into
  * text, topic (#tag) and due date (natural language via chrono).
@@ -15,7 +24,7 @@ export function parseTodo(input: string): ParsedTodo {
   let text = input.trim();
 
   let topic: string | null = null;
-  const tagMatch = text.match(/#([\p{L}\p{N}_-]+)/u);
+  const tagMatch = text.match(new RegExp(`#(${TAG_CHARS}+)`, "u"));
   if (tagMatch) {
     topic = tagMatch[1];
     text = (text.slice(0, tagMatch.index) + text.slice(tagMatch.index! + tagMatch[0].length)).trim();

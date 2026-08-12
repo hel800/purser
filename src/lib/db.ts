@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { isValidCategoryName } from "./parse";
 
 export interface Todo {
   id: number;
@@ -126,7 +127,8 @@ export async function deleteTodo(id: number): Promise<void> {
 export async function updateCategory(id: number, name: string, color: string): Promise<void> {
   const d = await getDb();
   const clean = name.trim();
-  if (!clean) return;
+  // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
+  if (!clean || !isValidCategoryName(clean)) return;
   // renaming onto an existing case-insensitive collision is ignored
   const clash = await d.select<{ id: number }[]>(
     "SELECT id FROM categories WHERE name = $1 COLLATE NOCASE AND id != $2",
