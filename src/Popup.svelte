@@ -72,6 +72,9 @@
     initSettings();
     reload();
     const unlisten = listen("purser://refresh", async () => {
+      // the window is hidden, not destroyed — drop focus a click may have
+      // left on a button, or Enter would re-activate it next time
+      (document.activeElement as HTMLElement | null)?.blur?.();
       const data = await openTodos();
       view = "open";
       todos = data;
@@ -215,6 +218,9 @@
         if (flat.length) selected = (selected - 1 + flat.length) % flat.length;
         break;
       case "Enter":
+        // a previously clicked button (tab, pen, wordmark…) may still hold
+        // focus — block its default Enter activation, only toggle the todo
+        e.preventDefault();
         await toggleSelected();
         break;
       case "d": {
