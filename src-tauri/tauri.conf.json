@@ -28,7 +28,7 @@
         "url": "quickadd.html",
         "title": "Add todo",
         "width": 620,
-        "height": 106,
+        "height": 108,
         "center": true,
         "visible": false,
         "decorations": false,

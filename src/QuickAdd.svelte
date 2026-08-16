@@ -87,7 +87,7 @@
   // the date / category chips or the shortcuts wrap onto extra lines the
   // window must grow to keep them visible — and shrink back once they fit
   // again. Fit the window height to the hints' natural height.
-  const BASE_HEIGHT = 106;
+  const BASE_HEIGHT = 108;
   const HINTS_BASE = 22;
   let fitRaf = 0;
   function fitWindow() {
@@ -225,7 +225,7 @@
     /* must render with exactly the same metrics as the ghost overlay */
     font-family: inherit;
     font-size: 20px;
-    line-height: 1.15;
+    line-height: 1.3;
     width: 100%;
     padding: 0;
     position: relative;
@@ -246,7 +246,7 @@
     top: 0;
     font-family: inherit;
     font-size: 20px;
-    line-height: 1.15;
+    line-height: 1.3;
     /* pre, not nowrap: consecutive spaces must occupy the same width as in the input */
     white-space: pre;
     pointer-events: none;
