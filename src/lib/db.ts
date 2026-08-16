@@ -114,6 +114,19 @@ export async function updateText(id: number, text: string): Promise<void> {
   await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
 }
 
+export async function updateTodoCategory(id: number, categoryName: string | null): Promise<void> {
+  const d = await getDb();
+  const clean = categoryName?.trim() ?? "";
+  if (!clean) {
+    await d.execute("UPDATE todos SET category_id = NULL WHERE id = $1", [id]);
+    return;
+  }
+  // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
+  if (!isValidCategoryName(clean)) return;
+  const categoryId = await getOrCreateCategory(d, clean);
+  await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
+}
+
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);

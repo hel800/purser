@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, listCategories, type Todo, type Category } from "./lib/db";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
   import { formatDue, dueStatus, parseDueDate, isValidCategoryName } from "./lib/parse";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
@@ -17,7 +17,19 @@
   let leaving: { id: number; dir: "left" | "right" } | null = $state(null);
   let editing: { id: number; value: string; field: "due" | "text" } | null = $state(null);
   let catEdit: { id: number; name: string; color: string } | null = $state(null);
+  let catMenu: { id: number } | null = $state(null);
+  let catMenuActive = $state(0);
+  let catMenuValue = $state("");
+  let catMenuScrollLeft = $state(0);
+  let catMenuInput = $state<HTMLInputElement>();
+  let catMenuRows = $state<(HTMLLIElement | null)[]>([]);
   let allCategories: Category[] = $state([]);
+
+  // mirror the input's horizontal scroll so the ghost overlay stays glued to
+  // the caret when a long name scrolls
+  function syncCatMenuScroll() {
+    catMenuScrollLeft = catMenuInput?.scrollLeft ?? 0;
+  }
 
   // valid = tag-compatible charset and not a duplicate of another category
   let catNameValid = $derived.by(() => {
@@ -26,6 +38,41 @@
     if (!isValidCategoryName(name)) return false;
     const lower = name.toLowerCase();
     return !allCategories.some((c) => c.id !== catEdit!.id && c.name.toLowerCase() === lower);
+  });
+
+  interface CatMenuItem {
+    kind: "cat" | "none";
+    name?: string;
+    color?: string;
+    key: string;
+  }
+
+  // the pick list below the "new category" input: every category, then a
+  // "No topic" row to remove the assignment
+  let catMenuItems = $derived.by(() => {
+    const items: CatMenuItem[] = [];
+    for (const c of allCategories) {
+      items.push({ kind: "cat", name: c.name, color: c.color, key: `c${c.id}` });
+    }
+    items.push({ kind: "none", key: "none" });
+    return items;
+  });
+
+  // a new-category name needs text and must round-trip through #tag syntax
+  let catMenuCreateValid = $derived.by(() => {
+    const v = catMenuValue.trim();
+    return v.length > 0 && isValidCategoryName(v);
+  });
+
+  // grayed-out completion of a unique existing category while typing
+  let catMenuGhost = $derived.by(() => {
+    if (!catMenu || catMenuActive !== 0) return "";
+    const v = catMenuValue;
+    if (!v || !isValidCategoryName(v)) return "";
+    const lower = v.toLowerCase();
+    if (allCategories.some((c) => c.name.toLowerCase() === lower)) return ""; // already complete
+    const match = allCategories.find((c) => c.name.toLowerCase().startsWith(lower));
+    return match ? match.name.slice(v.length) : "";
   });
 
   let editPreview = $derived.by(() => {
@@ -81,6 +128,7 @@
       selected = 0;
       editing = null;
       catEdit = null;
+      catMenu = null;
     });
     return () => {
       unlisten.then((f) => f());
@@ -124,6 +172,7 @@
     selected = 0;
     editing = null;
     catEdit = null;
+    catMenu = null;
   }
 
   function startDueEdit(idx: number, todo: Todo) {
@@ -136,6 +185,21 @@
     if (leaving) return;
     selected = idx;
     editing = { id: todo.id, value: todo.text, field: "text" };
+  }
+
+  function openCatMenu(idx: number, todo: Todo) {
+    if (leaving) return;
+    selected = idx;
+    // fresh list for suggestions (quick-add may have added categories)
+    listCategories().then((c) => (allCategories = c));
+    catMenu = { id: todo.id };
+    catMenuActive = 0;
+    catMenuValue = "";
+  }
+
+  function closeCatMenu() {
+    catMenu = null;
+    catMenuValue = "";
   }
 
   async function onEditKeydown(e: KeyboardEvent) {
@@ -200,11 +264,97 @@
     else if (e.key === "Escape") cancelCatEdit();
   }
 
+  function catMenuMove(dir: 1 | -1) {
+    catMenuActive = Math.min(Math.max(catMenuActive + dir, 0), catMenuItems.length);
+    // keyboard navigation moves focus so typing lands in the list (j/k nav)
+    // instead of the "new category" input
+    if (catMenuActive === 0) catMenuInput?.focus();
+    else catMenuRows[catMenuActive - 1]?.focus();
+  }
+
+  async function catMenuChoose(activeIndex: number) {
+    if (!catMenu) return;
+    // row 0 is the "new category" input — Enter creates it (empty names ignored)
+    if (activeIndex === 0) {
+      catMenuActive = 0;
+      catMenuInput?.focus();
+      if (!catMenuCreateValid) return;
+      await updateTodoCategory(catMenu.id, catMenuValue.trim());
+      closeCatMenu();
+      await reload();
+      return;
+    }
+    const item = catMenuItems[activeIndex - 1];
+    if (!item) return;
+    await updateTodoCategory(catMenu.id, item.kind === "none" ? null : (item.name ?? null));
+    closeCatMenu();
+    await reload();
+  }
+
+  async function onCatMenuKeydown(e: KeyboardEvent) {
+    if (!catMenu) return;
+    switch (e.key) {
+      case "Escape":
+        closeCatMenu();
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        catMenuMove(1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        catMenuMove(-1);
+        break;
+      case "j":
+      case "k":
+        // only navigate while the list is active — inside the input these
+        // must type normally
+        if (catMenuActive !== 0) {
+          e.preventDefault();
+          catMenuMove(e.key === "j" ? 1 : -1);
+        }
+        break;
+      case "Enter":
+        e.preventDefault();
+        await catMenuChoose(catMenuActive);
+        break;
+      case "Tab":
+        // accept the grayed-out completion instead of tabbing away
+        e.preventDefault();
+        acceptCatMenuGhost();
+        break;
+      case "ArrowRight":
+        if (catMenuActive === 0 && catMenuGhost) {
+          e.preventDefault();
+          acceptCatMenuGhost();
+        }
+        break;
+    }
+  }
+
+  function acceptCatMenuGhost() {
+    if (!catMenuGhost) return;
+    catMenuValue += catMenuGhost;
+  }
+
+  function menuScrollIntoView(node: HTMLElement, active: boolean) {
+    function update(a: boolean) {
+      if (a) node.scrollIntoView({ block: "nearest" });
+    }
+    update(active);
+    return { update };
+  }
+
   async function onKeydown(e: KeyboardEvent) {
     if (editing) return;
     if (catEdit) {
       // never let an orphaned category edit lock the keyboard
       if (e.key === "Escape") cancelCatEdit();
+      return;
+    }
+    if (catMenu) {
+      // the category menu takes over the arrow/enter/escape keys
+      await onCatMenuKeydown(e);
       return;
     }
     switch (e.key) {
@@ -241,6 +391,14 @@
         if (t && view === "open") {
           e.preventDefault();
           startTextEdit(selected, t);
+        }
+        break;
+      }
+      case "c": {
+        const t = flat[selected];
+        if (t && view === "open") {
+          e.preventDefault();
+          openCatMenu(selected, t);
         }
         break;
       }
@@ -417,8 +575,20 @@
   </div>
 
   <footer>
-    <span>
-      ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date" : "restore · Del remove"} · Esc close
+    <span class="hints">
+      <span class="hint"><kbd>↑↓</kbd> navigate</span>
+      <span class="hint">
+        <kbd>Enter</kbd>
+        {view === "open" ? "done" : "restore"}
+      </span>
+      {#if view === "open"}
+        <span class="hint"><kbd>E</kbd> edit</span>
+        <span class="hint"><kbd>D</kbd> due date</span>
+        <span class="hint"><kbd>C</kbd> category</span>
+      {:else}
+        <span class="hint"><kbd>Del</kbd> remove</span>
+      {/if}
+      <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
       <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
@@ -428,6 +598,64 @@
     </span>
   </footer>
 </main>
+
+{#if catMenu}
+  <div class="menu-backdrop" role="presentation" onkeydown={() => {}} onclick={closeCatMenu}>
+    <div
+      class="menu"
+      role="listbox"
+      tabindex="-1"
+      onkeydown={() => {}}
+      onclick={(e) => e.stopPropagation()}
+    >
+      <div class="menu-title">Change category</div>
+      <ul class="menu-list">
+        <li class="menu-item create" class:active={catMenuActive === 0}>
+          <span class="menu-create-wrap" class:invalid={catMenuValue !== "" && !catMenuCreateValid}>
+            <input
+              class="menu-create-input"
+              bind:this={catMenuInput}
+              bind:value={catMenuValue}
+              use:focusInput
+              onscroll={syncCatMenuScroll}
+              placeholder="New category…"
+              spellcheck="false"
+            />
+            <!-- always shown: the input's text is transparent, so the overlay
+                 renders the typed name with the completion suffix right after it -->
+            <span class="menu-ghost" aria-hidden="true" style="transform: translateX({-catMenuScrollLeft}px)">
+              <span class="ghost-typed">{catMenuValue}</span>{catMenuGhost}
+            </span>
+          </span>
+        </li>
+        {#each catMenuItems as item, i (item.key)}
+          <li
+            class="menu-item"
+            class:active={catMenuActive === i + 1}
+            class:none={item.kind === "none"}
+            role="option"
+            aria-selected={catMenuActive === i + 1}
+            tabindex="-1"
+            bind:this={catMenuRows[i]}
+            use:menuScrollIntoView={catMenuActive === i + 1}
+            onclick={() => catMenuChoose(i + 1)}
+            onkeydown={() => {}}
+            onmouseover={() => (catMenuActive = i + 1)}
+            onfocus={() => (catMenuActive = i + 1)}
+          >
+            {#if item.kind === "none"}
+              No topic
+            {:else}
+              <span class="dot" style:background={item.color}></span>
+              {item.name}
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <div class="menu-hint">Type name · ↑↓ pick · Enter ok · Esc close</div>
+    </div>
+  </div>
+{/if}
 
 <style>
   main {
@@ -552,6 +780,121 @@
     font: inherit;
     color: var(--ok);
     cursor: pointer;
+  }
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 0.45);
+  }
+  .menu {
+    width: 240px;
+    max-width: calc(100vw - 40px);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+    overflow: hidden;
+  }
+  .menu-title {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+  }
+  .menu-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    /* ~6 rows visible, then the list scrolls */
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .menu-item.active {
+    background: var(--bg);
+  }
+  .menu-item.create {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .menu-item.none {
+    color: var(--text-dim);
+  }
+  .menu-item .dot {
+    margin: 0;
+  }
+  .menu-create-wrap {
+    flex: 1;
+    position: relative;
+    min-width: 0;
+    /* clip the ghost when a long name scrolls the input */
+    overflow: hidden;
+  }
+  .menu-create-input {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 16px;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+    color: transparent;
+    caret-color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .menu-create-input::placeholder {
+    color: var(--text-dim);
+    opacity: 0.7;
+  }
+  .menu-create-wrap.invalid .menu-create-input {
+    caret-color: var(--danger);
+  }
+  .menu-ghost {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 0;
+    color: var(--text-dim);
+    opacity: 0.6;
+    pointer-events: none;
+    white-space: pre;
+    overflow: hidden;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .menu-ghost .ghost-typed {
+    color: var(--text);
+    opacity: 1;
+  }
+  .menu-create-wrap.invalid .menu-ghost .ghost-typed {
+    color: var(--danger);
+  }
+  .menu-hint {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
   }
   .todo {
     display: flex;
@@ -689,6 +1032,33 @@
     font-size: 11px;
     color: var(--text-dim);
     border-top: 1px solid var(--border);
+  }
+  .hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 12px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--text);
+    white-space: nowrap;
   }
   .wordmark-btn {
     background: none;
