@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the popup, quick-add and about windows",
-  "windows": ["popup", "quickadd", "about"],
+  "description": "Permissions for the popup, quick-add, about and help windows",
+  "windows": ["popup", "quickadd", "about", "help"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",

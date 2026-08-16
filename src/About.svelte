@@ -2,6 +2,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getVersion } from "@tauri-apps/api/app";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
@@ -31,6 +32,7 @@
   <p class="version">Version {version}</p>
   <p class="meta">MIT License · Released {released}</p>
   <button class="link" onclick={() => openUrl(REPO_URL)}>github.com/hel800/purser</button>
+  <button class="link" onclick={() => invoke("open_help")}>Keyboard shortcuts</button>
 </main>
 
 <style>

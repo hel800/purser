@@ -23,6 +23,7 @@ export default defineConfig({
         popup: resolve(__dirname, "index.html"),
         quickadd: resolve(__dirname, "quickadd.html"),
         about: resolve(__dirname, "about.html"),
+        help: resolve(__dirname, "help.html"),
       },
     },
   },

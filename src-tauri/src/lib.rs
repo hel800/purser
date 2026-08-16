@@ -45,6 +45,11 @@ impl Default for Settings {
     }
 }
 
+/// Label of the window that opened the keyboard-shortcut sheet, if it is
+/// open. Kept so the caller stays visible underneath (modal behavior) and
+/// regains focus when the sheet closes.
+struct SheetOwner(Mutex<Option<String>>);
+
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
         .app_config_dir()
@@ -83,6 +88,52 @@ fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
 #[tauri::command]
 fn open_about(app: AppHandle) {
     show_about(&app);
+}
+
+/// The keyboard-shortcut sheet is a small always-on-top window like About,
+/// but it behaves like a modal: whichever window opened it (or the tray)
+/// stays visible underneath, and the sheet hands focus back on close.
+fn show_help(app: &AppHandle, owner: Option<String>) {
+    if let Some(win) = app.get_webview_window("help") {
+        // set the owner before taking focus, so the caller's focus-loss
+        // handler sees the sheet as open and does not hide it
+        *app.state::<SheetOwner>().0.lock().unwrap() = owner;
+        let _ = win.center();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+fn help_is_open(app: &AppHandle) -> bool {
+    app.state::<SheetOwner>().0.lock().unwrap().is_some()
+}
+
+fn close_help_inner(app: &AppHandle) {
+    let owner = {
+        let state = app.state::<SheetOwner>();
+        let mut guard = state.0.lock().unwrap();
+        guard.take()
+    };
+    if let Some(win) = app.get_webview_window("help") {
+        let _ = win.hide();
+    }
+    if let Some(label) = owner {
+        if let Some(owner_win) = app.get_webview_window(&label) {
+            if owner_win.is_visible().unwrap_or(false) {
+                let _ = owner_win.set_focus();
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn open_help(window: WebviewWindow, app: AppHandle) {
+    show_help(&app, Some(window.label().to_string()));
+}
+
+#[tauri::command]
+fn close_help(app: AppHandle) {
+    close_help_inner(&app);
 }
 
 fn toggle_quick_add(app: &AppHandle) {
@@ -191,7 +242,7 @@ pub fn run() {
                 .add_migrations("sqlite:purser.db", migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![get_settings, open_about])
+        .invoke_handler(tauri::generate_handler![get_settings, open_about, open_help, close_help])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
             if first_run {
@@ -201,6 +252,7 @@ pub fn run() {
                 save_settings(app.handle(), &settings);
             }
             app.manage(Mutex::new(settings.clone()));
+            app.manage(SheetOwner(Mutex::new(None)));
 
             #[cfg(desktop)]
             {
@@ -251,6 +303,7 @@ pub fn run() {
                         &MenuItem::with_id(app, "list", "Show todos\tCtrl+Alt+L", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
+                        &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
                         &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
                         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
                     ],
@@ -296,6 +349,7 @@ pub fn run() {
                             let _ = app.emit("purser://settings-changed", snapshot);
                         }
                         "quit" => app.exit(0),
+                        "help" => show_help(app, None),
                         "about" => show_about(app),
                         _ => {}
                     })
@@ -325,7 +379,16 @@ pub fn run() {
                 let _ = window.hide();
             }
             WindowEvent::Focused(false) => {
-                let _ = window.hide();
+                let app = window.app_handle();
+                if window.label() == "help" {
+                    // sheet lost focus (tray click, another popup…) — close
+                    // it and hand focus back to the window that opened it
+                    close_help_inner(app);
+                } else if !help_is_open(app) {
+                    let _ = window.hide();
+                }
+                // else: the keyboard-shortcut sheet is on top — keep the
+                // caller open underneath so it reads like a modal
             }
             _ => {}
         })

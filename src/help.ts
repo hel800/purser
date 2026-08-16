@@ -1,8 +1,8 @@
 import { mount } from "svelte";
 import "./styles.css";
-import About from "./About.svelte";
+import Help from "./Help.svelte";
 import { disableContextMenu } from "./lib/contextmenu";
 
 disableContextMenu();
 
-export default mount(About, { target: document.getElementById("app")! });
+export default mount(Help, { target: document.getElementById("app")! });
