@@ -136,12 +136,12 @@
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        active = (active + 1) % suggestions.length;
+        active = Math.min(active + 1, suggestions.length - 1);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        active = (active - 1 + suggestions.length) % suggestions.length;
+        active = Math.max(active - 1, 0);
         return;
       }
     }

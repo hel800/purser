@@ -210,12 +210,12 @@
       case "ArrowDown":
       case "j":
         e.preventDefault();
-        if (flat.length) selected = (selected + 1) % flat.length;
+        if (flat.length) selected = Math.min(selected + 1, flat.length - 1);
         break;
       case "ArrowUp":
       case "k":
         e.preventDefault();
-        if (flat.length) selected = (selected - 1 + flat.length) % flat.length;
+        if (flat.length) selected = Math.max(selected - 1, 0);
         break;
       case "Enter":
         // a previously clicked button (tab, pen, wordmark…) may still hold
