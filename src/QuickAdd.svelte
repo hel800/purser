@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalSize } from "@tauri-apps/api/dpi";
   import { listen, emit } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { parseTodo, formatDue } from "./lib/parse";
@@ -79,11 +80,32 @@
 
   const win = getCurrentWindow();
 
+  let hintsEl: HTMLElement;
+
+  // The quick-add popup is a fixed-size 620x106 window. Everything above the
+  // hints row (titlebar, input, gaps, padding) has a constant height, so when
+  // the date / category chips or the shortcuts wrap onto extra lines the
+  // window must grow to keep them visible — and shrink back once they fit
+  // again. Fit the window height to the hints' natural height.
+  const BASE_HEIGHT = 106;
+  const HINTS_BASE = 22;
+  let fitRaf = 0;
+  function fitWindow() {
+    cancelAnimationFrame(fitRaf);
+    fitRaf = requestAnimationFrame(() => {
+      if (!hintsEl) return;
+      const hintsHeight = Math.max(HINTS_BASE, hintsEl.offsetHeight);
+      win.setSize(new LogicalSize(620, BASE_HEIGHT + (hintsHeight - HINTS_BASE)));
+    });
+  }
+
   onMount(() => {
     initSettings();
     loadCategories();
     inputEl.focus();
     document.addEventListener("selectionchange", syncCaret);
+    const resizeObserver = new ResizeObserver(() => fitWindow());
+    resizeObserver.observe(hintsEl);
     const unlisten = listen("purser://focus", () => {
       loadCategories();
       // keep any half-typed todo; put the caret at its end
@@ -93,6 +115,7 @@
     });
     return () => {
       document.removeEventListener("selectionchange", syncCaret);
+      resizeObserver.disconnect();
       unlisten.then((f) => f());
     };
   });
@@ -159,7 +182,7 @@
       <span class="ghost-typed">{value}</span>{#if ghost}<span class="ghost-suffix">{ghost}</span>{/if}
     </span>
   </div>
-  <div class="hints">
+  <div class="hints" bind:this={hintsEl}>
     {#if parsed.dueAt}
       <span class="chip due">📅 {formatDue(parsed.dueAt)}</span>
     {/if}
@@ -240,6 +263,7 @@
   }
   .hints {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     min-height: 22px;
     align-items: center;
@@ -249,6 +273,9 @@
     padding: 2px 10px;
     font-size: 12px;
     background: var(--bg-raised);
+    max-width: 100%;
+    /* keep long unbreakable #tags from spilling past the window edge */
+    overflow-wrap: anywhere;
   }
   .chip.due {
     color: var(--accent);
@@ -259,5 +286,6 @@
   .muted {
     color: var(--text-dim);
     font-size: 12px;
+    min-width: 0;
   }
 </style>

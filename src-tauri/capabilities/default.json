@@ -9,6 +9,7 @@
     "core:window:allow-show",
     "core:window:allow-center",
     "core:window:allow-set-focus",
+    "core:window:allow-set-size",
     "sql:default",
     "sql:allow-load",
     "sql:allow-select",
