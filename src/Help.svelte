@@ -34,6 +34,7 @@
       <div class="row"><span class="keys"><kbd>Tab</kbd></span>Switch between Open and Done</div>
       <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span>Edit text</div>
       <div class="row"><span class="keys"><kbd>D</kbd></span>Edit due date (empty removes it)</div>
+      <div class="row"><span class="keys"><kbd>C</kbd></span>Change category</div>
       <div class="row"><span class="keys"><kbd>Del</kbd></span>Delete permanently (Done view)</div>
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Close popup</div>
     </section>
@@ -88,6 +89,8 @@
     flex: 1;
     overflow-y: auto;
     padding: 8px 14px 12px;
+    display: flex;
+    flex-direction: column;
   }
   section {
     margin-top: 10px;
@@ -130,7 +133,7 @@
     white-space: nowrap;
   }
   .tip {
-    margin-top: 12px;
+    margin-top: auto;
     padding-top: 10px;
     border-top: 1px solid var(--border);
     font-size: 12px;
