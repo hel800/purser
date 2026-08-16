@@ -575,8 +575,20 @@
   </div>
 
   <footer>
-    <span>
-      ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date · C category" : "restore · Del remove"} · Esc close
+    <span class="hints">
+      <span class="hint"><kbd>↑↓</kbd> navigate</span>
+      <span class="hint">
+        <kbd>Enter</kbd>
+        {view === "open" ? "done" : "restore"}
+      </span>
+      {#if view === "open"}
+        <span class="hint"><kbd>E</kbd> edit</span>
+        <span class="hint"><kbd>D</kbd> due date</span>
+        <span class="hint"><kbd>C</kbd> category</span>
+      {:else}
+        <span class="hint"><kbd>Del</kbd> remove</span>
+      {/if}
+      <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
       <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
@@ -1020,6 +1032,33 @@
     font-size: 11px;
     color: var(--text-dim);
     border-top: 1px solid var(--border);
+  }
+  .hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 12px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--text);
+    white-space: nowrap;
   }
   .wordmark-btn {
     background: none;

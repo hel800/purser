@@ -197,7 +197,12 @@
     {#if parsed.topic}
       <span class="chip topic">#{parsed.topic}</span>
     {/if}
-    <span class="muted">Enter save · Tab complete · Esc hide · Ctrl+⌫ clear</span>
+    <span class="muted hints">
+      <span class="hint"><kbd>Enter</kbd> save</span>
+      <span class="hint"><kbd>Tab</kbd> complete</span>
+      <span class="hint"><kbd>Esc</kbd> hide</span>
+      <span class="hint"><kbd>Ctrl+⌫</kbd> clear</span>
+    </span>
   </div>
 </main>
 
@@ -310,5 +315,30 @@
     color: var(--text-dim);
     font-size: 12px;
     min-width: 0;
+  }
+  .hints {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: center;
+  }
+  .hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--text);
+    white-space: nowrap;
   }
 </style>
