@@ -2,6 +2,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { LogicalSize } from "@tauri-apps/api/dpi";
   import { listen, emit } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { parseTodo, formatDue } from "./lib/parse";
   import { addTodo, listCategories, type Category } from "./lib/db";
@@ -127,6 +128,11 @@
   }
 
   async function onKeydown(e: KeyboardEvent) {
+    if (e.key === "F1") {
+      e.preventDefault();
+      invoke("open_help");
+      return;
+    }
     // only intercept keys while a completion is actually visible
     if (ghost) {
       if (e.key === "Tab" || e.key === "ArrowRight") {
@@ -160,10 +166,13 @@
   }
 </script>
 
+<svelte:window onkeydown={onKeydown} />
+
 <main>
   <div class="titlebar">
     <Logo size={18} />
     <span>Add new todo</span>
+    <button class="help" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
     <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
   </div>
   <!-- svelte-ignore a11y_autofocus -->
@@ -172,7 +181,6 @@
       bind:this={inputEl}
       bind:value
       oninput={onInput}
-      onkeydown={onKeydown}
       onscroll={syncCaret}
       placeholder="pay rent friday 5pm #finance"
       spellcheck="false"
@@ -212,9 +220,24 @@
     letter-spacing: 0.03em;
   }
   .wordmark {
-    margin-left: auto;
     height: 9px;
     opacity: 0.75;
+  }
+  .help {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .help:hover {
+    color: var(--accent);
+    border-color: var(--accent);
   }
   input {
     background: transparent;

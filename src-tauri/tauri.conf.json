@@ -48,6 +48,19 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false
+      },
+      {
+        "label": "help",
+        "url": "help.html",
+        "title": "Keyboard shortcuts",
+        "width": 380,
+        "height": 560,
+        "center": true,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false
       }
     ],
     "security": {

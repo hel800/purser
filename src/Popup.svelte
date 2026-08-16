@@ -110,6 +110,10 @@
     invoke("open_about");
   }
 
+  function openHelp() {
+    invoke("open_help");
+  }
+
   async function switchView(v: View) {
     if (view === v) return;
     // fetch first, then commit view + data together so the old list never
@@ -251,6 +255,14 @@
       case "Tab":
         e.preventDefault();
         await switchView(view === "open" ? "done" : "open");
+        break;
+      case "?":
+        e.preventDefault();
+        openHelp();
+        break;
+      case "F1":
+        e.preventDefault();
+        openHelp();
         break;
     }
   }
@@ -408,9 +420,12 @@
     <span>
       ↑↓ navigate · Enter {view === "open" ? "done · E edit · D due date" : "restore · Del remove"} · Esc close
     </span>
-    <button class="wordmark-btn" onclick={openAbout} title="About Purser">
-      <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
-    </button>
+    <span class="footer-actions">
+      <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
+      <button class="wordmark-btn" onclick={openAbout} title="About Purser">
+        <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
+      </button>
+    </span>
   </footer>
 </main>
 
@@ -682,6 +697,28 @@
     flex-shrink: 0;
     line-height: 0;
     cursor: pointer;
+  }
+  .footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .help-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 7px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--text-dim);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .help-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
   }
   .wordmark {
     height: 9px;
