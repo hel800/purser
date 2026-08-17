@@ -1,13 +1,74 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import Logo from "./lib/Logo.svelte";
+  import { initSettings, settings, prettyShortcut } from "./lib/settings.svelte";
+
+  interface Captured {
+    id: string;
+    shortcut: string | null;
+    cancelled: boolean;
+    reason: string | null;
+  }
+
+  let recording: "quick_add" | "list" | null = null;
+  let error: string | null = null;
+  let unlisten: UnlistenFn | null = null;
+
+  onMount(() => {
+    initSettings();
+    listen<Captured>("purser://shortcut-captured", (e) => {
+      if (e.payload.id !== recording) return;
+      if (e.payload.cancelled) {
+        cancelRecording();
+        return;
+      }
+      if (e.payload.reason) {
+        error = e.payload.reason;
+        invoke("set_recording", { id: recording });
+        return;
+      }
+      const id = recording;
+      invoke("set_shortcut", { id, shortcut: e.payload.shortcut })
+        .then(() => {
+          recording = null;
+          error = null;
+          invoke("set_recording", { id: null });
+        })
+        .catch((err) => {
+          error = String(err);
+          invoke("set_recording", { id: recording });
+        });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+  });
 
   function close() {
     invoke("close_help");
   }
 
+  onDestroy(() => {
+    unlisten?.();
+  });
+
   function onKeydown(e: KeyboardEvent) {
+    // while recording, the OS-level listener in the backend drives capture
+    if (recording) return;
     if (e.key === "Escape") close();
+  }
+
+  function startRecord(id: "quick_add" | "list") {
+    error = null;
+    recording = id;
+    invoke("set_recording", { id });
+  }
+
+  function cancelRecording() {
+    recording = null;
+    error = null;
+    invoke("set_recording", { id: null });
   }
 </script>
 
@@ -23,8 +84,29 @@
   <div class="sheet">
     <section>
       <h2>Global</h2>
-      <div class="row"><span class="keys"><kbd>Ctrl+Alt+N</kbd></span>Quick-add popup</div>
-      <div class="row"><span class="keys"><kbd>Ctrl+Alt+L</kbd></span>Todo list popup</div>
+      <div class="row global">
+        <span class="keys"><kbd>{prettyShortcut(settings.quickAddShortcut)}</kbd></span>
+        <span class="label">Quick-add popup</span>
+        <button
+          class="record"
+          class:active={recording === "quick_add"}
+          onclick={() => startRecord("quick_add")}
+        >
+          {recording === "quick_add" ? "Press a shortcut…" : "Change"}
+        </button>
+      </div>
+      <div class="row global">
+        <span class="keys"><kbd>{prettyShortcut(settings.listShortcut)}</kbd></span>
+        <span class="label">Todo list popup</span>
+        <button
+          class="record"
+          class:active={recording === "list"}
+          onclick={() => startRecord("list")}
+        >
+          {recording === "list" ? "Press a shortcut…" : "Change"}
+        </button>
+      </div>
+      {#if error}<p class="error">{error}</p>{/if}
     </section>
 
     <section>
@@ -114,9 +196,15 @@
     font-size: 12px;
     color: var(--text);
   }
+  .row.global {
+    align-items: center;
+  }
+  .label {
+    flex: 1;
+  }
   .keys {
-    flex: 0 0 120px;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 120px;
     font-size: 11px;
     white-space: nowrap;
   }
@@ -131,6 +219,28 @@
     font-size: 11px;
     color: var(--text);
     white-space: nowrap;
+  }
+  .record {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .record:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .record.active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .error {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--danger);
   }
   .tip {
     margin-top: auto;
