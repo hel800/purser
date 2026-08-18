@@ -96,9 +96,32 @@
     return { combo: [...mods, token].join("+") };
   }
 
+  /** Wrap Tab between the sheet's focusable elements so focus never escapes
+   *  the window (escaping would count as losing focus and close the sheet). */
+  function cycleTab(e: KeyboardEvent) {
+    const focusables = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    if (focusables.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && active === focusables[0]) {
+      e.preventDefault();
+      focusables[focusables.length - 1].focus();
+    } else if (!e.shiftKey && active === focusables[focusables.length - 1]) {
+      e.preventDefault();
+      focusables[0].focus();
+    }
+  }
+
   async function onKeydown(e: KeyboardEvent) {
     if (!recording) {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        close();
+      } else if (e.key === "Tab") {
+        cycleTab(e);
+      }
       return;
     }
     e.preventDefault();
