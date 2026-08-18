@@ -2,73 +2,126 @@
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import Logo from "./lib/Logo.svelte";
-  import { initSettings, settings, prettyShortcut } from "./lib/settings.svelte";
-
-  interface Captured {
-    id: string;
-    shortcut: string | null;
-    cancelled: boolean;
-    reason: string | null;
-  }
+  import { initSettings, settings } from "./lib/settings.svelte";
 
   let recording: "quick_add" | "list" | null = null;
   let error: string | null = null;
-  let unlisten: UnlistenFn | null = null;
+  let unlisteners: UnlistenFn[] = [];
 
   onMount(() => {
     initSettings();
-    listen<Captured>("purser://shortcut-captured", (e) => {
-      if (e.payload.id !== recording) return;
-      if (e.payload.cancelled) {
-        cancelRecording();
-        return;
-      }
-      if (e.payload.reason) {
-        error = e.payload.reason;
-        invoke("set_recording", { id: recording });
-        return;
-      }
-      const id = recording;
-      invoke("set_shortcut", { id, shortcut: e.payload.shortcut })
-        .then(() => {
+    listen<string>("purser://shortcut-error", (e) => {
+      error = e.payload;
+    }).then((fn) => unlisteners.push(fn));
+    // recording must never survive losing focus — a keystroke meant for
+    // another application could otherwise reassign the shortcut. The sheet
+    // stays open (backend keeps it while capturing); explain what happened:
+    // a combo owned by another app triggers that app and steals focus.
+    getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (!focused && recording) {
           recording = null;
-          error = null;
-          invoke("set_recording", { id: null });
-        })
-        .catch((err) => {
-          error = String(err);
-          invoke("set_recording", { id: recording });
-        });
-    }).then((fn) => {
-      unlisten = fn;
-    });
+          invoke("end_capture");
+          error =
+            "Recording stopped — that combination seems to be in use by " +
+            "another application (it just triggered there). Try a different one.";
+        }
+      })
+      .then((fn) => unlisteners.push(fn));
+  });
+
+  onDestroy(() => {
+    unlisteners.forEach((fn) => fn());
   });
 
   function close() {
+    if (recording) cancelRecording();
     invoke("close_help");
-  }
-
-  onDestroy(() => {
-    unlisten?.();
-  });
-
-  function onKeydown(e: KeyboardEvent) {
-    // while recording, the OS-level listener in the backend drives capture
-    if (recording) return;
-    if (e.key === "Escape") close();
   }
 
   function startRecord(id: "quick_add" | "list") {
     error = null;
     recording = id;
-    invoke("set_recording", { id });
+    // release our own hotkeys so the combo lands in this webview
+    invoke("begin_capture");
   }
 
   function cancelRecording() {
     recording = null;
     error = null;
-    invoke("set_recording", { id: null });
+    invoke("end_capture");
+  }
+
+  /** Combo token for a non-modifier key, or null for keys the shortcut
+   *  parser does not understand. */
+  function keyToken(code: string): string | null {
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+    if (/^Digit\d$/.test(code)) return code.slice(5);
+    if (/^F([1-9]|1\d|2[0-4])$/.test(code)) return code.toLowerCase();
+    const named: Record<string, string> = {
+      Space: "space",
+      Enter: "enter",
+      Tab: "tab",
+      Backspace: "backspace",
+      Delete: "delete",
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      Home: "home",
+      End: "end",
+      PageUp: "pageup",
+      PageDown: "pagedown",
+    };
+    return named[code] ?? null;
+  }
+
+  /** The pressed combo, a reason it can't be used, or neither while only
+   *  modifiers are down. */
+  function comboFromEvent(e: KeyboardEvent): { combo?: string; reason?: string } {
+    if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return {}; // wait for the main key
+    const mods = [
+      e.ctrlKey && "ctrl",
+      e.altKey && "alt",
+      e.shiftKey && "shift",
+      e.metaKey && "super",
+    ].filter(Boolean) as string[];
+    if (mods.length === 0) {
+      return { reason: "Hold down a modifier (Ctrl, Alt, Shift or Win) with a key." };
+    }
+    const token = keyToken(e.code);
+    if (!token) return { reason: "Unsupported key — try a letter, number or F-key." };
+    return { combo: [...mods, token].join("+") };
+  }
+
+  async function onKeydown(e: KeyboardEvent) {
+    if (!recording) {
+      if (e.key === "Escape") close();
+      return;
+    }
+    e.preventDefault();
+    if (e.repeat) return;
+    if (e.key === "Escape") {
+      cancelRecording();
+      return;
+    }
+    const { combo, reason } = comboFromEvent(e);
+    if (reason) {
+      error = reason; // keep recording so another combo can be tried
+      return;
+    }
+    if (!combo) return; // modifier only — the main key is still to come
+    const id = recording;
+    try {
+      // set_shortcut re-registers both hotkeys itself on success
+      await invoke("set_shortcut", { id, shortcut: combo });
+      recording = null;
+      error = null;
+    } catch (err) {
+      error = String(err); // keep recording so another combo can be tried
+    }
   }
 </script>
 
@@ -85,26 +138,40 @@
     <section>
       <h2>Global</h2>
       <div class="row global">
-        <span class="keys"><kbd>{prettyShortcut(settings.quickAddShortcut)}</kbd></span>
+        <span class="keys">
+          {#if recording === "quick_add"}
+            <span class="rec-hint">Press a shortcut…</span>
+          {:else}
+            <kbd>{settings.quickAddPretty}</kbd>
+          {/if}
+          <button
+            class="pen"
+            class:cancel={recording === "quick_add"}
+            title={recording === "quick_add" ? "Cancel recording (Esc)" : "Change shortcut"}
+            onclick={() => (recording === "quick_add" ? cancelRecording() : startRecord("quick_add"))}
+          >
+            {recording === "quick_add" ? "✕" : "✎"}
+          </button>
+        </span>
         <span class="label">Quick-add popup</span>
-        <button
-          class="record"
-          class:active={recording === "quick_add"}
-          onclick={() => startRecord("quick_add")}
-        >
-          {recording === "quick_add" ? "Press a shortcut…" : "Change"}
-        </button>
       </div>
       <div class="row global">
-        <span class="keys"><kbd>{prettyShortcut(settings.listShortcut)}</kbd></span>
+        <span class="keys">
+          {#if recording === "list"}
+            <span class="rec-hint">Press a shortcut…</span>
+          {:else}
+            <kbd>{settings.listPretty}</kbd>
+          {/if}
+          <button
+            class="pen"
+            class:cancel={recording === "list"}
+            title={recording === "list" ? "Cancel recording (Esc)" : "Change shortcut"}
+            onclick={() => (recording === "list" ? cancelRecording() : startRecord("list"))}
+          >
+            {recording === "list" ? "✕" : "✎"}
+          </button>
+        </span>
         <span class="label">Todo list popup</span>
-        <button
-          class="record"
-          class:active={recording === "list"}
-          onclick={() => startRecord("list")}
-        >
-          {recording === "list" ? "Press a shortcut…" : "Change"}
-        </button>
       </div>
       {#if error}<p class="error">{error}</p>{/if}
     </section>
@@ -220,22 +287,40 @@
     color: var(--text);
     white-space: nowrap;
   }
-  .record {
+  /* pencil next to the shortcut, as in the todo list; while recording the
+     same slot holds the ✕ cancel, so the row never shifts */
+  .pen {
     background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 8px;
-    font-size: 11px;
+    border: none;
+    padding: 0;
+    width: 16px;
+    font-size: 12px;
     color: var(--text-dim);
     cursor: pointer;
+    flex-shrink: 0;
+    opacity: 0.45;
   }
-  .record:hover {
-    color: var(--text);
-    border-color: var(--accent);
+  .row.global:hover .pen,
+  .pen.cancel {
+    opacity: 1;
   }
-  .record.active {
+  .pen:hover {
     color: var(--accent);
-    border-color: var(--accent);
+    opacity: 1;
+  }
+  .pen.cancel:hover {
+    color: var(--danger);
+  }
+  .rec-hint {
+    /* same box metrics as a kbd (invisible borders included), so swapping
+       between them never changes the row height */
+    display: inline-block;
+    padding: 1px 5px;
+    border: 1px solid transparent;
+    border-bottom-width: 2px;
+    font-size: 11px;
+    color: var(--accent);
+    white-space: nowrap;
   }
   .error {
     margin-top: 6px;
