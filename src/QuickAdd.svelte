@@ -151,6 +151,12 @@
         return;
       }
     }
+    if (e.key === "Tab") {
+      // without a completion Tab would move focus out of the input and
+      // eventually out of the window, hiding the widget — so it's a no-op
+      e.preventDefault();
+      return;
+    }
     if (e.key === "Escape") {
       await win.hide();
     } else if (e.key === "Backspace" && e.ctrlKey) {
@@ -340,5 +346,8 @@
     line-height: 1.3;
     color: var(--text);
     white-space: nowrap;
+    /* the thicker bottom border shifts the key's text upward; drop the
+       keycap 3px so it lines up with the hint description text */
+    margin-top: 3px;
   }
 </style>
