@@ -20,6 +20,8 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
 | `E` or `F2` | Edit the text of the selected open todo |
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
+| `Space` | Show/hide the notes of the selected todo |
+| `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
@@ -39,13 +41,16 @@ One line, natural language — dates and categories are parsed as you type:
 
 ```
 pay rent friday 5pm #finance
-prepare demo tomorrow 9am #work
+prepare demo tomorrow 9am #work // agenda: budget, https://example.com/prep
 water plants
 ```
 
 - Dates/times are parsed with [chrono-node](https://github.com/wanasit/chrono) (`friday 5pm`, `tomorrow`, `in 2 weeks`, `Aug 20`, …)
 - `#word` assigns a category (created on the fly); existing category names
   autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
+- Everything after a `//` (preceded by a space) becomes the todo's note —
+  dates and `#tags` in the note are left untouched, and URLs like
+  `https://…` in the title are never mistaken for the separator
 - A half-typed todo survives closing the popup and is still there when it reopens
 
 ### Categories and due dates
@@ -57,6 +62,15 @@ water plants
 - Hover a todo row for pencils to edit its text and due date by mouse
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
   next working day before 12:00
+
+### Notes
+
+- Every todo can carry longer notes — free text, links, instructions — hidden
+  in the list by default. A `≡` marker shows next to todos that have one.
+- `Space` (or clicking `≡`) expands the note below the row; URLs are
+  clickable and open in the browser. `N` (or the pencil in the panel) edits;
+  `Ctrl+Enter` saves, saving an empty note removes it. Done view shows notes
+  read-only.
 
 ## Data
 

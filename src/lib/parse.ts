@@ -5,6 +5,7 @@ export interface ParsedTodo {
   text: string;
   topic: string | null;
   dueAt: string | null; // ISO string
+  notes: string | null;
 }
 
 /** Characters allowed in a `#tag` — the single source of truth, shared by
@@ -17,11 +18,22 @@ export function isValidCategoryName(name: string): boolean {
 }
 
 /**
- * Parse a quick-add line like "pay rent friday 5pm #finance" into
- * text, topic (#tag) and due date (natural language via chrono).
+ * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
+ * the joint account" into text, topic (#tag), due date (natural language
+ * via chrono) and an optional note after a " // " separator.
  */
 export function parseTodo(input: string): ParsedTodo {
   let text = input.trim();
+
+  // "//" starts the note when preceded by whitespace (or at the start of
+  // the line) — inside "https://…" it follows a ":", so URLs never match.
+  // No space needed after it: "call bob //agenda" works.
+  let notes: string | null = null;
+  const sep = text.match(/(^|\s)\/\//);
+  if (sep && sep.index !== undefined) {
+    notes = text.slice(sep.index + sep[0].length).trim() || null;
+    text = text.slice(0, sep.index).trim();
+  }
 
   let topic: string | null = null;
   const tagMatch = text.match(new RegExp(`#(${TAG_CHARS}+)`, "u"));
@@ -40,7 +52,7 @@ export function parseTodo(input: string): ParsedTodo {
       .trim();
   }
 
-  return { text, topic, dueAt };
+  return { text, topic, dueAt, notes };
 }
 
 export function parseDueDate(input: string): string | null {

@@ -207,6 +207,8 @@
       <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span>Edit text</div>
       <div class="row"><span class="keys"><kbd>D</kbd></span>Edit due date (empty removes it)</div>
       <div class="row"><span class="keys"><kbd>C</kbd></span>Change category</div>
+      <div class="row"><span class="keys"><kbd>Space</kbd></span>Show / hide notes</div>
+      <div class="row"><span class="keys"><kbd>N</kbd></span>Edit notes (Ctrl+Enter saves)</div>
       <div class="row"><span class="keys"><kbd>Del</kbd></span>Delete permanently (Done view)</div>
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Close popup</div>
     </section>
@@ -215,6 +217,7 @@
       <h2>Quick-add</h2>
       <div class="row"><span class="keys"><kbd>Enter</kbd></span>Save todo</div>
       <div class="row"><span class="keys"><kbd>Tab</kbd> or <kbd>→</kbd></span>Accept category suggestion</div>
+      <div class="row"><span class="keys"><kbd>//</kbd></span>Everything after becomes a note</div>
       <div class="row"><span class="keys"><kbd>Ctrl+⌫</kbd></span>Clear input</div>
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Hide popup</div>
     </section>

@@ -3,8 +3,10 @@
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
   import { formatDue, dueStatus, parseDueDate, isValidCategoryName } from "./lib/parse";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { slide } from "svelte/transition";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
@@ -24,6 +26,9 @@
   let catMenuInput = $state<HTMLInputElement>();
   let catMenuRows = $state<(HTMLLIElement | null)[]>([]);
   let allCategories: Category[] = $state([]);
+  // notes: which todo's panel is expanded, and the inline notes editor
+  let notesOpenId: number | null = $state(null);
+  let notesEdit: { id: number; value: string } | null = $state(null);
 
   // mirror the input's horizontal scroll so the ghost overlay stays glued to
   // the caret when a long name scrolls
@@ -129,6 +134,8 @@
       editing = null;
       catEdit = null;
       catMenu = null;
+      notesOpenId = null;
+      notesEdit = null;
     });
     return () => {
       unlisten.then((f) => f());
@@ -138,6 +145,14 @@
   // flat index across groups follows the todos array order because
   // grouping preserves the SQL sort (topic, then due date)
   let flat = $derived(groups.flatMap((g) => g.todos));
+
+  // moving the selection to another todo auto-hides an open notes panel
+  $effect(() => {
+    if (notesOpenId !== null && flat[selected]?.id !== notesOpenId) {
+      notesOpenId = null;
+      notesEdit = null;
+    }
+  });
 
   /// tick / restore with a short slide-out: the checkbox state flips first,
   /// then the row slides away (~150ms + ~280ms, under 500ms total)
@@ -173,6 +188,8 @@
     editing = null;
     catEdit = null;
     catMenu = null;
+    notesOpenId = null;
+    notesEdit = null;
   }
 
   function startDueEdit(idx: number, todo: Todo) {
@@ -222,8 +239,69 @@
     }
   }
 
-  function focusInput(node: HTMLInputElement) {
+  function focusInput(node: HTMLInputElement | HTMLTextAreaElement) {
     node.focus();
+  }
+
+  /** Split note text into plain segments and clickable https?:// links. */
+  function linkify(text: string): { link: boolean; value: string }[] {
+    return text
+      .split(/(https?:\/\/\S+)/g)
+      .filter((part) => part !== "")
+      .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
+  }
+
+  /** Indicator click: toggle existing notes, or start writing the first one. */
+  function toggleNotes(idx: number, todo: Todo) {
+    selected = idx;
+    if (notesEdit) return;
+    if (!todo.notes) {
+      if (view === "open") startNotesEdit(idx, todo);
+      return;
+    }
+    notesOpenId = notesOpenId === todo.id ? null : todo.id;
+  }
+
+  function startNotesEdit(idx: number, todo: Todo) {
+    if (leaving || view !== "open") return;
+    selected = idx;
+    notesOpenId = todo.id;
+    notesEdit = { id: todo.id, value: todo.notes ?? "" };
+  }
+
+  async function saveNotesEdit() {
+    if (!notesEdit) return;
+    const { id } = notesEdit;
+    const value = notesEdit.value.trim();
+    notesEdit = null;
+    await updateNotes(id, value || null);
+    if (!value) notesOpenId = null; // note removed — nothing left to show
+    await reload();
+  }
+
+  function cancelNotesEdit() {
+    if (notesEdit) {
+      // collapse the panel again if the todo never had a note to show
+      const id = notesEdit.id;
+      const todo = todos.find((t) => t.id === id);
+      if (!todo?.notes) notesOpenId = null;
+    }
+    notesEdit = null;
+  }
+
+  async function onNotesEditKeydown(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      cancelNotesEdit();
+    } else if (e.key === "Enter" && e.ctrlKey) {
+      await saveNotesEdit();
+    }
+  }
+
+  // clicking anywhere outside the notes editor discards the edit
+  function onNotesFocusout(e: FocusEvent) {
+    const wrap = e.currentTarget as HTMLElement;
+    if (!wrap.contains(e.relatedTarget as Node | null)) cancelNotesEdit();
   }
 
   // clicking anywhere outside a todo text/due editor discards the edit,
@@ -346,7 +424,7 @@
   }
 
   async function onKeydown(e: KeyboardEvent) {
-    if (editing) return;
+    if (editing || notesEdit) return;
     if (catEdit) {
       // never let an orphaned category edit lock the keyboard
       if (e.key === "Escape") cancelCatEdit();
@@ -399,6 +477,21 @@
         if (t && view === "open") {
           e.preventDefault();
           openCatMenu(selected, t);
+        }
+        break;
+      }
+      case " ": {
+        // also blocks a focused button from being space-activated
+        e.preventDefault();
+        const t = flat[selected];
+        if (t?.notes) notesOpenId = notesOpenId === t.id ? null : t.id;
+        break;
+      }
+      case "n": {
+        const t = flat[selected];
+        if (t && view === "open") {
+          e.preventDefault();
+          startNotesEdit(selected, t);
         }
         break;
       }
@@ -523,6 +616,19 @@
             />
           {:else}
             <span class="textwrap">
+              {#if todo.notes}
+                <!-- inline prefix of the name: titles without notes start here -->
+                <button
+                  class="note-ind has"
+                  title={notesOpenId === todo.id ? "Hide notes (Space)" : "Show notes (Space)"}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    toggleNotes(idx, todo);
+                  }}
+                >
+                  ≡
+                </button>
+              {/if}
               <span class="text" title={todo.text}>{todo.text}</span>
               {#if view === "open"}
                 <button
@@ -535,6 +641,18 @@
                 >
                   ✎
                 </button>
+                {#if !todo.notes}
+                  <button
+                    class="note-ind"
+                    title="Add note (N)"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      toggleNotes(idx, todo);
+                    }}
+                  >
+                    ≡
+                  </button>
+                {/if}
               {/if}
             </span>
           {/if}
@@ -570,13 +688,50 @@
             {/if}
           {/if}
         </div>
+        {#if notesOpenId === todo.id}
+          <div class="notes" transition:slide={{ duration: 150 }}>
+            {#if notesEdit?.id === todo.id}
+              <span class="notes-editor" onfocusout={onNotesFocusout}>
+                <!-- svelte-ignore a11y_autofocus -->
+                <textarea
+                  class="notes-input"
+                  bind:value={notesEdit.value}
+                  onkeydown={onNotesEditKeydown}
+                  use:focusInput
+                  placeholder="Notes, links, instructions… (empty removes the note)"
+                  spellcheck="false"
+                ></textarea>
+                <span class="notes-hint">Ctrl+Enter save · Esc cancel</span>
+              </span>
+            {:else}
+              <span class="notes-text">
+                {#each linkify(todo.notes ?? "") as part, i (i)}
+                  {#if part.link}
+                    <button
+                      class="link"
+                      title="Open in browser"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        openUrl(part.value);
+                      }}>{part.value}</button
+                    >
+                  {:else}{part.value}{/if}
+                {/each}
+              </span>
+              {#if view === "open"}
+                <button class="pen notes-pen" title="Edit notes (N)" onclick={() => startNotesEdit(idx, todo)}>
+                  ✎
+                </button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
       {/each}
     {/each}
   </div>
 
   <footer>
     <span class="hints">
-      <span class="hint"><kbd>↑↓</kbd> navigate</span>
       <span class="hint">
         <kbd>Enter</kbd>
         {view === "open" ? "done" : "restore"}
@@ -585,6 +740,7 @@
         <span class="hint"><kbd>E</kbd> edit</span>
         <span class="hint"><kbd>D</kbd> due date</span>
         <span class="hint"><kbd>C</kbd> category</span>
+        <span class="hint"><kbd>N</kbd> note</span>
       {:else}
         <span class="hint"><kbd>Del</kbd> remove</span>
       {/if}
@@ -991,7 +1147,13 @@
     min-width: 0;
     display: flex;
     align-items: baseline;
-    gap: 6px;
+    /* ≡ hugs the title (3px); the row gap of 10px minus this pull-in
+       leaves ~6px between the check and ≡ — smaller, but still larger */
+    gap: 3px;
+    margin-left: -4px;
+  }
+  .textwrap .pen {
+    margin-left: 3px; /* keep the usual 6px before the edit pencil */
   }
   .text {
     min-width: 0;
@@ -1006,6 +1168,100 @@
     white-space: normal;
     overflow-wrap: anywhere;
     max-height: 10em;
+  }
+  /* notes indicator: dimmed when the todo has notes, hover-only otherwise */
+  .note-ind {
+    background: none;
+    border: none;
+    padding: 0;
+    width: 12px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    flex-shrink: 0;
+    opacity: 0; /* the trailing "add note" variant is a hover affordance */
+  }
+  .note-ind.has {
+    opacity: 0.55;
+  }
+  .todo:hover .note-ind {
+    opacity: 0.8;
+  }
+  .note-ind:hover {
+    color: var(--accent);
+    opacity: 1;
+  }
+  /* expanded notes panel below the row, aligned with the title column */
+  .notes {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: -2px 14px 6px 34px;
+    padding: 6px 10px;
+    background: var(--bg-raised);
+    border-left: 2px solid var(--border);
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .notes-text {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 8em;
+    overflow-y: auto;
+  }
+  .link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .notes .pen {
+    opacity: 0.4;
+  }
+  .notes:hover .pen {
+    opacity: 0.8;
+  }
+  .notes .pen:hover {
+    color: var(--accent);
+    opacity: 1;
+  }
+  .notes-editor {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .notes-input {
+    width: 100%;
+    min-height: 64px;
+    resize: vertical;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    padding: 4px 6px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .notes-input:focus {
+    border-color: var(--accent);
+  }
+  .notes-hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.8;
   }
   .due {
     font-size: 12px;
