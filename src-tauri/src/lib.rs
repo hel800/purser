@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -7,10 +8,11 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-const QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
-const LIST_SHORTCUT: &str = "ctrl+alt+l";
+const DEFAULT_QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
+const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
 
 const TRAY_DARK: tauri::image::Image<'static> = tauri::include_image!("./icons/tray-dark-32.png");
 
@@ -35,20 +37,76 @@ fn taskbar_is_light() -> bool {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Settings {
+    #[serde(default = "default_hour24")]
     hour24: bool,
+    #[serde(default = "default_quick_add_shortcut")]
+    quick_add_shortcut: String,
+    #[serde(default = "default_list_shortcut")]
+    list_shortcut: String,
+}
+
+fn default_hour24() -> bool {
+    true
+}
+
+fn default_quick_add_shortcut() -> String {
+    DEFAULT_QUICK_ADD_SHORTCUT.into()
+}
+
+fn default_list_shortcut() -> String {
+    DEFAULT_LIST_SHORTCUT.into()
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hour24: true }
+        Self {
+            hour24: default_hour24(),
+            quick_add_shortcut: default_quick_add_shortcut(),
+            list_shortcut: default_list_shortcut(),
+        }
     }
 }
+
+/// Settings as sent to the webviews — includes display-ready shortcut
+/// strings so combo formatting lives in one place (the tray uses it too).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsDto {
+    hour24: bool,
+    quick_add_shortcut: String,
+    list_shortcut: String,
+    quick_add_pretty: String,
+    list_pretty: String,
+}
+
+impl From<&Settings> for SettingsDto {
+    fn from(s: &Settings) -> Self {
+        Self {
+            hour24: s.hour24,
+            quick_add_shortcut: s.quick_add_shortcut.clone(),
+            list_shortcut: s.list_shortcut.clone(),
+            quick_add_pretty: pretty_shortcut(&s.quick_add_shortcut),
+            list_pretty: pretty_shortcut(&s.list_shortcut),
+        }
+    }
+}
+
+/// The tray's "Add todo"/"Show todos" items, so their accelerator text can
+/// be refreshed when a shortcut changes.
+struct TrayShortcutItems(Mutex<Option<(MenuItem<tauri::Wry>, MenuItem<tauri::Wry>)>>);
 
 /// Label of the window that opened the keyboard-shortcut sheet, if it is
 /// open. Kept so the caller stays visible underneath (modal behavior) and
 /// regains focus when the sheet closes.
 struct SheetOwner(Mutex<Option<String>>);
+
+/// True while the help sheet is recording a combo. A combo owned by another
+/// application triggers that app and steals focus — in that case the sheet
+/// must stay open (the frontend stops the recording and explains) instead
+/// of silently disappearing.
+struct Capturing(AtomicBool);
 
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
@@ -81,8 +139,8 @@ fn save_settings(app: &AppHandle, settings: &Settings) {
 }
 
 #[tauri::command]
-fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> Settings {
-    state.lock().unwrap().clone()
+fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> SettingsDto {
+    SettingsDto::from(&*state.lock().unwrap())
 }
 
 #[tauri::command]
@@ -106,6 +164,58 @@ fn show_help(app: &AppHandle, owner: Option<String>) {
 
 fn help_is_open(app: &AppHandle) -> bool {
     app.state::<SheetOwner>().0.lock().unwrap().is_some()
+}
+
+/// While the help sheet records a combo, Purser's own global shortcuts are
+/// unregistered so the keypress reaches the sheet's webview (where it is
+/// captured by a plain keydown handler) instead of firing its action.
+#[tauri::command]
+fn begin_capture(app: AppHandle) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    app.state::<Capturing>().0.store(true, Ordering::Relaxed);
+    let _ = app.global_shortcut().unregister_all();
+}
+
+/// Recording ended without an assignment (cancelled, or the sheet lost
+/// focus): restore the registration for whatever Settings holds.
+#[tauri::command]
+fn end_capture(app: AppHandle) {
+    app.state::<Capturing>().0.store(false, Ordering::Relaxed);
+    if let Err(e) = register_both(&app) {
+        eprintln!("shortcut registration: {e}");
+        let _ = app.emit("purser://shortcut-error", e);
+    }
+}
+
+/// (Re-)registers both global shortcuts from the current Settings, replacing
+/// whatever is registered. Invalid stored combos are skipped (startup resets
+/// those to defaults); a registration failure is returned for the caller to
+/// revert or surface.
+fn register_both(app: &AppHandle) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    let (qa_raw, list_raw) = {
+        let state = app.state::<Mutex<Settings>>();
+        let s = state.lock().unwrap();
+        (s.quick_add_shortcut.clone(), s.list_shortcut.clone())
+    };
+    let _ = app.global_shortcut().unregister_all();
+    let mut problems = Vec::new();
+    for raw in [&qa_raw, &list_raw] {
+        if let Ok(combo) = raw.parse::<Shortcut>() {
+            if let Err(e) = app.global_shortcut().register(combo) {
+                problems.push(format!("{} ({e})", pretty_shortcut(raw)));
+            }
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Could not register {} — the combination may be in use by another application.",
+            problems.join(" and ")
+        ))
+    }
 }
 
 fn close_help_inner(app: &AppHandle) {
@@ -189,6 +299,108 @@ fn show_about(app: &AppHandle) {
     }
 }
 
+/// Human-friendly form of a stored combo ("ctrl+alt+n" → "Ctrl+Alt+N") for
+/// the tray menu accelerator text.
+fn pretty_shortcut(combo: &str) -> String {
+    combo
+        .split('+')
+        .map(|token| match token.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => "Ctrl".to_string(),
+            "alt" | "option" => "Alt".to_string(),
+            "shift" => "Shift".to_string(),
+            "super" | "cmd" | "command" | "win" => "Win".to_string(),
+            t if t.len() == 1 => t.to_uppercase(),
+            t => {
+                let mut chars = t.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+fn set_tray_shortcut_labels(app: &AppHandle, settings: &Settings) {
+    let state = app.state::<TrayShortcutItems>();
+    let items = state.0.lock().unwrap();
+    let Some((add, list)) = items.as_ref() else {
+        return;
+    };
+    let _ = add.set_text(format!(
+        "Add todo\t{}",
+        pretty_shortcut(&settings.quick_add_shortcut)
+    ));
+    let _ = list.set_text(format!(
+        "Show todos\t{}",
+        pretty_shortcut(&settings.list_shortcut)
+    ));
+}
+
+/// Replaces one of the two global shortcuts: validates the combo, persists
+/// it and re-registers both hotkeys (reverting the setting on failure).
+#[tauri::command]
+fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), String> {
+    let parsed: Shortcut = shortcut
+        .parse()
+        .map_err(|_| format!("Unsupported key combination \"{shortcut}\"."))?;
+    if parsed.mods.is_empty() {
+        return Err("A shortcut needs at least one modifier (Ctrl, Alt, Shift or Win).".into());
+    }
+
+    let settings_state = app.state::<Mutex<Settings>>();
+    let mut settings = settings_state.lock().unwrap();
+    let (old_raw, other_raw) = match id.as_str() {
+        "quick_add" => (settings.quick_add_shortcut.clone(), settings.list_shortcut.clone()),
+        "list" => (settings.list_shortcut.clone(), settings.quick_add_shortcut.clone()),
+        _ => return Err("Unknown shortcut id.".into()),
+    };
+    // compare parsed values, not strings, so "alt+ctrl+n" == "ctrl+alt+n"
+    if other_raw.parse::<Shortcut>().ok() == Some(parsed) {
+        return Err("That combination is already used by the other shortcut.".into());
+    }
+    if old_raw.parse::<Shortcut>().ok() == Some(parsed) {
+        // keeping the current combo is a no-op, not an error; re-register
+        // since capture mode unregistered everything
+        drop(settings);
+        app.state::<Capturing>().0.store(false, Ordering::Relaxed);
+        return register_both(&app);
+    }
+
+    match id.as_str() {
+        "quick_add" => settings.quick_add_shortcut = shortcut,
+        "list" => settings.list_shortcut = shortcut,
+        _ => unreachable!(),
+    }
+    let snapshot = settings.clone();
+    drop(settings);
+
+    if let Err(e) = register_both(&app) {
+        // revert the setting and restore the previous registration
+        {
+            let mut settings = settings_state.lock().unwrap();
+            match id.as_str() {
+                "quick_add" => settings.quick_add_shortcut = old_raw.clone(),
+                _ => settings.list_shortcut = old_raw.clone(),
+            }
+        }
+        if let Err(revert_err) = register_both(&app) {
+            let _ = app.emit(
+                "purser://shortcut-error",
+                format!("Restoring {} also failed: {revert_err}", pretty_shortcut(&old_raw)),
+            );
+        }
+        return Err(e);
+    }
+
+    app.state::<Capturing>().0.store(false, Ordering::Relaxed);
+    save_settings(&app, &snapshot);
+    set_tray_shortcut_labels(&app, &snapshot);
+    let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
+    Ok(())
+}
+
 /// CLI flags double as the hotkey fallback on Linux/Wayland, where
 /// applications cannot grab global shortcuts: bind e.g.
 /// `purser --quick-add` in the desktop environment's keyboard settings.
@@ -242,7 +454,15 @@ pub fn run() {
                 .add_migrations("sqlite:purser.db", migrations)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![get_settings, open_about, open_help, close_help])
+        .invoke_handler(tauri::generate_handler![
+            get_settings,
+            set_shortcut,
+            begin_capture,
+            end_capture,
+            open_about,
+            open_help,
+            close_help
+        ])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
             if first_run {
@@ -251,31 +471,72 @@ pub fn run() {
                 let _ = app.autolaunch().enable();
                 save_settings(app.handle(), &settings);
             }
-            app.manage(Mutex::new(settings.clone()));
+            app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
+            app.manage(Capturing(AtomicBool::new(false)));
+            app.manage(TrayShortcutItems(Mutex::new(None)));
+
+            // an invalid stored combo would otherwise be un-fixable from the
+            // UI: reset it to the default so display and registration agree
+            {
+                let state = app.state::<Mutex<Settings>>();
+                let mut s = state.lock().unwrap();
+                let mut fixed = false;
+                if s.quick_add_shortcut.parse::<Shortcut>().is_err() {
+                    s.quick_add_shortcut = DEFAULT_QUICK_ADD_SHORTCUT.into();
+                    fixed = true;
+                }
+                if s.list_shortcut.parse::<Shortcut>().is_err() {
+                    s.list_shortcut = DEFAULT_LIST_SHORTCUT.into();
+                    fixed = true;
+                }
+                if fixed {
+                    let snapshot = s.clone();
+                    drop(s);
+                    save_settings(app.handle(), &snapshot);
+                }
+            }
+            let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
 
             #[cfg(desktop)]
             {
-                use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
-
-                let quick_add: Shortcut = QUICK_ADD_SHORTCUT.parse().unwrap();
-                let list: Shortcut = LIST_SHORTCUT.parse().unwrap();
+                use tauri_plugin_global_shortcut::ShortcutState;
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_shortcuts([quick_add, list])?
                         .with_handler(move |app, shortcut, event| {
                             if event.state() != ShortcutState::Pressed {
                                 return;
                             }
-                            if shortcut == &quick_add {
+                            // derived from Settings on each press (presses are
+                            // rare) so there is no second copy to keep in sync
+                            let (quick_add, list) = {
+                                let state = app.state::<Mutex<Settings>>();
+                                let s = state.lock().unwrap();
+                                (
+                                    s.quick_add_shortcut.parse::<Shortcut>().ok(),
+                                    s.list_shortcut.parse::<Shortcut>().ok(),
+                                )
+                            };
+                            if quick_add.as_ref() == Some(shortcut) {
                                 toggle_quick_add(app);
-                            } else if shortcut == &list {
+                            } else if list.as_ref() == Some(shortcut) {
                                 toggle_popup(app);
                             }
                         })
                         .build(),
                 )?;
+
+                // a failure (combo owned by another app) must not be silent:
+                // log it and say so in the tray tooltip
+                let registration_error = register_both(app.handle()).err();
+                if let Some(e) = &registration_error {
+                    eprintln!("shortcut registration: {e}");
+                }
+                let tooltip = match &registration_error {
+                    Some(e) => format!("Purser — {e}"),
+                    None => "Purser".into(),
+                };
 
                 let autostart_item = CheckMenuItem::with_id(
                     app,
@@ -296,11 +557,17 @@ pub fn run() {
                 let settings_menu =
                     Submenu::with_items(app, "Settings", true, &[&autostart_item, &hour24_item])?;
 
+                let add_text = format!(
+                    "Add todo\t{}",
+                    pretty_shortcut(&settings.quick_add_shortcut)
+                );
+                let list_text = format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut));
+
                 let menu = Menu::with_items(
                     app,
                     &[
-                        &MenuItem::with_id(app, "add", "Add todo\tCtrl+Alt+N", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "list", "Show todos\tCtrl+Alt+L", true, None::<&str>)?,
+                        &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
+                        &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
@@ -318,7 +585,7 @@ pub fn run() {
                     } else {
                         app.default_window_icon().unwrap().clone()
                     })
-                    .tooltip("Purser")
+                    .tooltip(&tooltip)
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -346,7 +613,7 @@ pub fn run() {
                                 s.clone()
                             };
                             save_settings(app, &snapshot);
-                            let _ = app.emit("purser://settings-changed", snapshot);
+                            let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
                         }
                         "quit" => app.exit(0),
                         "help" => show_help(app, None),
@@ -365,6 +632,12 @@ pub fn run() {
                     })
                     .build(app)?;
 
+                // keep refs so the tray accelerator text can be refreshed
+                *app.state::<TrayShortcutItems>().0.lock().unwrap() = Some((
+                    menu.get("add").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
+                    menu.get("list").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
+                ));
+
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 if !args.is_empty() {
                     handle_cli_args(app.handle(), &args);
@@ -381,9 +654,16 @@ pub fn run() {
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
                 if window.label() == "help" {
-                    // sheet lost focus (tray click, another popup…) — close
-                    // it and hand focus back to the window that opened it
-                    close_help_inner(app);
+                    if app.state::<Capturing>().0.load(Ordering::Relaxed) {
+                        // recording lost focus — most likely the combo is
+                        // owned by another app and just triggered it. Keep
+                        // the sheet open; the frontend stops the recording
+                        // (so nothing can be captured unfocused) and explains.
+                    } else {
+                        // sheet lost focus (tray click, another popup…) —
+                        // close it and hand focus back to the opener
+                        close_help_inner(app);
+                    }
                 } else if !help_is_open(app) {
                     let _ = window.hide();
                 }
