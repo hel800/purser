@@ -109,6 +109,9 @@ npm run tauri build    # produce NSIS installer (Windows)
 
 Requires Rust (MSVC toolchain on Windows) and Node.
 
+## Notes
+Developed with the support of AI (Anthropic Claude Code)
+
 ## License
 
 [MIT](LICENSE)
