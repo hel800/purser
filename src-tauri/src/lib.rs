@@ -438,6 +438,12 @@ pub fn run() {
                   );",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "add notes to todos",
+            sql: "ALTER TABLE todos ADD COLUMN notes TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

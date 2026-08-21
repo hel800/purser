@@ -11,22 +11,28 @@
   import wordmark from "./assets/purser-wordmark.png";
 
   let value = $state("");
-  let inputEl: HTMLInputElement;
+  let inputEl: HTMLTextAreaElement;
   let caret = $state(0);
-  let scrollLeft = $state(0);
   let categories = $state<Category[]>([]);
   let active = $state(0);
   let suppressSuggest = $state(false);
   let parsed = $derived(parseTodo(value));
 
-  // Mirror the input's caret and horizontal scroll into state. Fired on
-  // input, clicks, Home/End/arrow moves (selectionchange) and scrolling —
-  // everything downstream (tag, suggestions, ghost) derives from these.
+  // Mirror the textarea's caret into state. Fired on input, clicks and
+  // Home/End/arrow moves (selectionchange) — everything downstream (tag,
+  // suggestions, ghost) derives from it.
   function syncCaret() {
     if (!inputEl) return;
     caret = inputEl.selectionStart ?? value.length;
-    scrollLeft = inputEl.scrollLeft;
   }
+
+  // the input is a soft-wrapping textarea that grows with its content
+  $effect(() => {
+    void value;
+    if (!inputEl) return;
+    inputEl.style.height = "auto";
+    inputEl.style.height = `${inputEl.scrollHeight}px`;
+  });
 
   // The `#tag` fragment currently being typed, anchored at the caret.
   let tag = $derived.by(() => {
@@ -83,20 +89,23 @@
 
   let hintsEl: HTMLElement;
 
-  // The quick-add popup is a fixed-size 620x106 window. Everything above the
-  // hints row (titlebar, input, gaps, padding) has a constant height, so when
-  // the date / category chips or the shortcuts wrap onto extra lines the
-  // window must grow to keep them visible — and shrink back once they fit
-  // again. Fit the window height to the hints' natural height.
+  // The quick-add popup is a fixed-width 620px window. The titlebar and
+  // paddings have constant height, but both the (wrapping) input and the
+  // hints row can grow onto extra lines — the window must grow with them
+  // and shrink back once everything fits a single line again.
   const BASE_HEIGHT = 108;
   const HINTS_BASE = 22;
+  const INPUT_BASE = 26; // one 20px/1.3 line
   let fitRaf = 0;
   function fitWindow() {
     cancelAnimationFrame(fitRaf);
     fitRaf = requestAnimationFrame(() => {
       if (!hintsEl) return;
       const hintsHeight = Math.max(HINTS_BASE, hintsEl.offsetHeight);
-      win.setSize(new LogicalSize(620, BASE_HEIGHT + (hintsHeight - HINTS_BASE)));
+      const inputHeight = Math.max(INPUT_BASE, inputEl?.offsetHeight ?? INPUT_BASE);
+      win.setSize(
+        new LogicalSize(620, BASE_HEIGHT + (hintsHeight - HINTS_BASE) + (inputHeight - INPUT_BASE))
+      );
     });
   }
 
@@ -107,6 +116,7 @@
     document.addEventListener("selectionchange", syncCaret);
     const resizeObserver = new ResizeObserver(() => fitWindow());
     resizeObserver.observe(hintsEl);
+    resizeObserver.observe(inputEl);
     const unlisten = listen("purser://focus", () => {
       loadCategories();
       // keep any half-typed todo; put the caret at its end
@@ -163,8 +173,11 @@
       // default Ctrl+Backspace only deletes a word; clear everything
       e.preventDefault();
       value = "";
-    } else if (e.key === "Enter" && parsed.text.length > 0) {
-      await addTodo(parsed.text, parsed.topic, parsed.dueAt);
+    } else if (e.key === "Enter") {
+      // the textarea wraps visually only — Enter never inserts a newline
+      e.preventDefault();
+      if (parsed.text.length === 0) return;
+      await addTodo(parsed.text, parsed.topic, parsed.dueAt, parsed.notes);
       value = "";
       await emit("purser://refresh");
       await win.hide();
@@ -183,16 +196,16 @@
   </div>
   <!-- svelte-ignore a11y_autofocus -->
   <div class="qawrap">
-    <input
+    <textarea
       bind:this={inputEl}
       bind:value
       oninput={onInput}
-      onscroll={syncCaret}
+      rows="1"
       placeholder="pay rent friday 5pm #finance"
       spellcheck="false"
       autofocus
-    />
-    <span class="ghost" aria-hidden="true" style="transform: translateX({-scrollLeft}px)">
+    ></textarea>
+    <span class="ghost" aria-hidden="true">
       <span class="ghost-typed">{value}</span>{#if ghost}<span class="ghost-suffix">{ghost}</span>{/if}
     </span>
   </div>
@@ -203,9 +216,13 @@
     {#if parsed.topic}
       <span class="chip topic">#{parsed.topic}</span>
     {/if}
+    {#if parsed.notes}
+      <span class="chip note">📝 note</span>
+    {/if}
     <span class="muted hints">
       <span class="hint"><kbd>Enter</kbd> save</span>
       <span class="hint"><kbd>Tab</kbd> complete</span>
+      <span class="hint"><kbd>//</kbd> note</span>
       <span class="hint"><kbd>Esc</kbd> hide</span>
       <span class="hint"><kbd>Ctrl+⌫</kbd> clear</span>
     </span>
@@ -250,39 +267,44 @@
     color: var(--accent);
     border-color: var(--accent);
   }
-  input {
+  textarea {
+    display: block;
     background: transparent;
     border: none;
     outline: none;
+    resize: none;
+    overflow: hidden; /* height is fitted to the content, never scrolls */
     color: transparent;
     caret-color: var(--text);
-    /* must render with exactly the same metrics as the ghost overlay */
+    /* must render with exactly the same metrics and wrapping as the ghost */
     font-family: inherit;
     font-size: 20px;
     line-height: 1.3;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     width: 100%;
     padding: 0;
     position: relative;
     z-index: 1;
   }
-  input::placeholder {
+  textarea::placeholder {
     color: var(--text-dim);
     opacity: 0.6;
   }
   .qawrap {
     position: relative;
-    /* clip the ghost when it is shifted left to follow the input's scroll */
-    overflow: hidden;
   }
   .ghost {
     position: absolute;
     left: 0;
+    right: 0;
     top: 0;
     font-family: inherit;
     font-size: 20px;
     line-height: 1.3;
-    /* pre, not nowrap: consecutive spaces must occupy the same width as in the input */
-    white-space: pre;
+    /* pre-wrap: wraps exactly like the textarea, spaces keep their width */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     pointer-events: none;
     color: var(--text-dim);
     opacity: 0.6;
@@ -316,6 +338,9 @@
   }
   .chip.topic {
     color: var(--ok);
+  }
+  .chip.note {
+    color: var(--warn);
   }
   .muted {
     color: var(--text-dim);

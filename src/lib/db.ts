@@ -4,6 +4,7 @@ import { isValidCategoryName } from "./parse";
 export interface Todo {
   id: number;
   text: string;
+  notes: string | null;
   category_id: number | null;
   category_name: string | null;
   category_color: string | null;
@@ -27,7 +28,7 @@ async function getDb(): Promise<Database> {
   return db;
 }
 
-const COLUMNS = `t.id, t.text, t.category_id, c.name AS category_name, c.color AS category_color,
+const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, c.color AS category_color,
   t.due_at, t.created_at, t.done_at`;
 
 const FROM = `FROM todos t LEFT JOIN categories c ON c.id = t.category_id`;
@@ -71,13 +72,14 @@ export async function listCategories(): Promise<Category[]> {
 export async function addTodo(
   text: string,
   topic: string | null,
-  dueAt: string | null
+  dueAt: string | null,
+  notes: string | null = null
 ): Promise<void> {
   const d = await getDb();
   const categoryId = await getOrCreateCategory(d, topic ?? "");
   await d.execute(
-    "INSERT INTO todos (text, category_id, due_at, created_at) VALUES ($1, $2, $3, $4)",
-    [text, categoryId, dueAt, new Date().toISOString()]
+    "INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ($1, $2, $3, $4, $5)",
+    [text, notes, categoryId, dueAt, new Date().toISOString()]
   );
 }
 
@@ -125,6 +127,11 @@ export async function updateTodoCategory(id: number, categoryName: string | null
   if (!isValidCategoryName(clean)) return;
   const categoryId = await getOrCreateCategory(d, clean);
   await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
+}
+
+export async function updateNotes(id: number, notes: string | null): Promise<void> {
+  const d = await getDb();
+  await d.execute("UPDATE todos SET notes = $1 WHERE id = $2", [notes || null, id]);
 }
 
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
