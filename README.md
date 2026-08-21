@@ -22,6 +22,8 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
 | `Space` | Show/hide the notes of the selected todo |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
+| `T` | Cycle the category filter (all → each category → no category) |
+| `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
