@@ -879,7 +879,7 @@
             {#if view === "open"}
               <button
                 class="pen"
-                title={todo.due_at ? "Edit due date" : "Add due date"}
+                title={todo.due_at ? "Edit due date (D)" : "Add due date (D)"}
                 onclick={(e) => {
                   e.stopPropagation();
                   startDueEdit(idx, todo);
