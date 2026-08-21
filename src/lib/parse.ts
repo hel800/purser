@@ -93,6 +93,21 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
+export function isToday(iso: string): boolean {
+  return sameDay(new Date(iso), new Date());
+}
+
+/** Within the current calendar week, Monday 00:00 through Sunday 24:00. */
+export function isThisWeek(iso: string): boolean {
+  const due = new Date(iso).getTime();
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  // getDay(): Sun=0 … Sat=6 — shift so the week starts on Monday
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const end = start.getTime() + 7 * 24 * 60 * 60 * 1000;
+  return due >= start.getTime() && due < end;
+}
+
 /**
  * Urgency of a due date:
  * - "overdue" — the moment has passed (red)

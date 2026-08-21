@@ -209,6 +209,8 @@
       <div class="row"><span class="keys"><kbd>C</kbd></span>Change category</div>
       <div class="row"><span class="keys"><kbd>Space</kbd></span>Show / hide notes</div>
       <div class="row"><span class="keys"><kbd>N</kbd></span>Edit notes (Ctrl+Enter saves)</div>
+      <div class="row"><span class="keys"><kbd>T</kbd></span>Cycle category filter</div>
+      <div class="row"><span class="keys"><kbd>F</kbd></span>Cycle due-date filter</div>
       <div class="row"><span class="keys"><kbd>Del</kbd></span>Delete permanently (Done view)</div>
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Close popup</div>
     </section>
