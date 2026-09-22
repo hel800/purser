@@ -439,6 +439,12 @@
     else catMenuRows[catMenuActive - 1]?.focus();
   }
 
+  // typing or focusing the "new category" input claims the selection, so a
+  // row the mouse happened to hover can't hijack Enter (issue #22)
+  function catMenuInputActive() {
+    catMenuActive = 0;
+  }
+
   async function catMenuChoose(activeIndex: number) {
     if (!catMenu) return;
     // row 0 is the "new category" input — Enter creates it (empty names ignored)
@@ -483,7 +489,8 @@
         break;
       case "Enter":
         e.preventDefault();
-        await catMenuChoose(catMenuActive);
+        // a typed valid name always wins over a row the mouse merely hovers
+        await catMenuChoose(catMenuCreateValid ? 0 : catMenuActive);
         break;
       case "Tab":
         // accept the grayed-out completion instead of tabbing away
@@ -976,6 +983,8 @@
               bind:value={catMenuValue}
               use:focusInput
               onscroll={syncCatMenuScroll}
+              oninput={catMenuInputActive}
+              onfocus={catMenuInputActive}
               placeholder="New category…"
               spellcheck="false"
             />
@@ -998,7 +1007,7 @@
             use:menuScrollIntoView={catMenuActive === i + 1}
             onclick={() => catMenuChoose(i + 1)}
             onkeydown={() => {}}
-            onmouseover={() => (catMenuActive = i + 1)}
+            onmousemove={() => (catMenuActive = i + 1)}
             onfocus={() => (catMenuActive = i + 1)}
           >
             {#if item.kind === "none"}
