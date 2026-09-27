@@ -8,6 +8,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
   import { initSettings } from "./lib/settings.svelte";
+  import { runImport, type ImportRequest } from "./lib/import";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
@@ -226,8 +227,12 @@
       notesOpenId = null;
       notesEdit = null;
     });
+    // imports run here (this webview is always loaded); the backend shows
+    // the result and then opens the list, which refreshes it
+    const unlistenImport = listen<ImportRequest>("purser://import", (e) => runImport(e.payload));
     return () => {
       unlisten.then((f) => f());
+      unlistenImport.then((f) => f());
     };
   });
 

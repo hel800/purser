@@ -1,10 +1,22 @@
+import { invoke } from "@tauri-apps/api/core";
+import { addTodo } from "./db";
 import { TAG_CHARS, isValidCategoryName, parseDueDate, parseTodo, splitNote, type ParsedTodo } from "./parse";
+
+/** Payload of the backend's `purser://import` event. */
+export interface ImportRequest {
+  fileName: string;
+  csv: boolean;
+  content: string;
+}
 
 export interface ImportResult {
   items: ParsedTodo[];
   /** entries that were read but not imported (no text, bad due date, done) */
   skipped: number;
 }
+
+/** Imports above this count need an explicit confirmation. */
+const CONFIRM_ABOVE = 50;
 
 /** A problem with the file itself — nothing gets imported. */
 export class ImportError extends Error {}
@@ -220,4 +232,34 @@ export function parseImport(content: string, csv: boolean): ImportResult {
     throw new ImportError("no todos found in the file.");
   }
   return result;
+}
+
+/**
+ * Handles a `purser://import` request: parse, confirm large imports, insert
+ * and report back to the backend (which shows the summary). Import only
+ * ever adds todos — existing todos and categories are never modified.
+ */
+export async function runImport({ fileName, csv, content }: ImportRequest): Promise<void> {
+  let imported = 0;
+  let skipped = 0;
+  const finish = (cancelled: boolean, error: string | null) =>
+    invoke("import_finished", { fileName, imported, skipped, cancelled, error });
+  try {
+    const result = parseImport(content, csv);
+    skipped = result.skipped;
+    if (
+      result.items.length > CONFIRM_ABOVE &&
+      !(await invoke<boolean>("confirm_import", { fileName, count: result.items.length }))
+    ) {
+      await finish(true, null);
+      return;
+    }
+    for (const todo of result.items) {
+      await addTodo(todo.text, todo.topic, todo.dueAt, todo.notes);
+      imported++;
+    }
+    await finish(false, null);
+  } catch (e) {
+    await finish(false, e instanceof Error ? e.message : String(e));
+  }
 }

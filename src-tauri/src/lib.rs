@@ -8,11 +8,15 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 const DEFAULT_QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
 const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
+
+/// Import files larger than this are rejected — a todo list is a few KB.
+const MAX_IMPORT_BYTES: u64 = 200 * 1024;
 
 const TRAY_DARK: tauri::image::Image<'static> = tauri::include_image!("./icons/tray-dark-32.png");
 
@@ -107,6 +111,10 @@ struct SheetOwner(Mutex<Option<String>>);
 /// must stay open (the frontend stops the recording and explains) instead
 /// of silently disappearing.
 struct Capturing(AtomicBool);
+
+/// True from opening the import file dialog until the popup webview reports
+/// the import finished, so a second menu click can't start a parallel one.
+struct Importing(AtomicBool);
 
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
@@ -283,12 +291,211 @@ fn toggle_popup(app: &AppHandle) {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();
         } else {
-            position_popup(&win);
-            let _ = win.show();
-            let _ = win.set_focus();
-            let _ = win.emit("purser://refresh", ());
+            show_popup(&win);
         }
     }
+}
+
+fn show_popup(win: &WebviewWindow) {
+    position_popup(win);
+    let _ = win.show();
+    let _ = win.set_focus();
+    let _ = win.emit("purser://refresh", ());
+}
+
+/// Payload of `purser://import`: the decoded file content, parsed and
+/// inserted by the popup webview (which owns the quick-add parser and DB).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportRequest {
+    file_name: String,
+    csv: bool,
+    content: String,
+}
+
+fn show_import_message(app: &AppHandle, kind: MessageDialogKind, text: String) {
+    app.dialog()
+        .message(text)
+        .title("Import todos")
+        .kind(kind)
+        .show(|_| {});
+}
+
+/// Opens the native file dialog (tray entry "Import todos…"). The import
+/// itself continues in `import_path` once a file was picked.
+fn start_import(app: &AppHandle) {
+    let importing = &app.state::<Importing>().0;
+    if importing.swap(true, Ordering::Relaxed) {
+        return; // a dialog or an import is already running
+    }
+    let handle = app.clone();
+    app.dialog()
+        .file()
+        .set_title("Import todos")
+        // Windows appends the "(*.txt;*.csv)" pattern to the name itself
+        .add_filter("Todo lists", &["txt", "csv"])
+        .pick_file(move |picked| {
+            let path = picked.and_then(|p| p.into_path().ok());
+            match path {
+                Some(path) => import_path(&handle, &path),
+                None => handle.state::<Importing>().0.store(false, Ordering::Relaxed),
+            }
+        });
+}
+
+/// Validates and decodes the picked file and hands its content to the popup
+/// webview. Any problem ends the import here with an error box — nothing is
+/// imported from a file that can't be read in full.
+fn import_path(app: &AppHandle, path: &std::path::Path) {
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let result = read_import_file(path).and_then(|(csv, content)| {
+        app.emit_to(
+            "popup",
+            "purser://import",
+            ImportRequest {
+                file_name: file_name.clone(),
+                csv,
+                content,
+            },
+        )
+        .map_err(|e| e.to_string())
+    });
+    if let Err(reason) = result {
+        app.state::<Importing>().0.store(false, Ordering::Relaxed);
+        show_import_message(
+            app,
+            MessageDialogKind::Error,
+            format!("Could not import {file_name}: {reason}"),
+        );
+    }
+}
+
+/// Returns (is_csv, decoded text) or a user-facing reason why the file
+/// can't be imported.
+fn read_import_file(path: &std::path::Path) -> Result<(bool, String), String> {
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let csv = match ext.as_str() {
+        "csv" => true,
+        "txt" => false,
+        _ => return Err("only .txt and .csv files are supported.".into()),
+    };
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("the file can't be read ({e})."))?
+        .len();
+    if size > MAX_IMPORT_BYTES {
+        return Err(format!(
+            "the file is larger than {} KB.",
+            MAX_IMPORT_BYTES / 1024
+        ));
+    }
+    let bytes = std::fs::read(path).map_err(|e| format!("the file can't be read ({e})."))?;
+    let text = decode_text(&bytes);
+    if text.contains('\0') {
+        return Err("the file is not a text file.".into());
+    }
+    if text.trim().is_empty() {
+        return Err("the file is empty.".into());
+    }
+    Ok((csv, text))
+}
+
+/// Decodes UTF-8 (BOM stripped) and BOM-marked UTF-16 (Excel's "Unicode
+/// text"); anything else that isn't valid UTF-8 is read as Latin-1, which
+/// older Excel CSV exports use.
+fn decode_text(bytes: &[u8]) -> String {
+    let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
+        let units: Vec<u16> = rest.chunks_exact(2).map(|c| from([c[0], c[1]])).collect();
+        String::from_utf16_lossy(&units)
+    };
+    match bytes {
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
+        [0xFF, 0xFE, rest @ ..] => utf16(rest, u16::from_le_bytes),
+        [0xFE, 0xFF, rest @ ..] => utf16(rest, u16::from_be_bytes),
+        _ => match std::str::from_utf8(bytes) {
+            Ok(s) => s.to_owned(),
+            Err(_) => bytes.iter().map(|&b| b as char).collect(),
+        },
+    }
+}
+
+/// Asked by the popup webview before importing many todos (the threshold is
+/// `CONFIRM_ABOVE` in src/lib/import.ts).
+#[tauri::command]
+async fn confirm_import(app: AppHandle, file_name: String, count: u32) -> bool {
+    app.dialog()
+        .message(format!("Import {count} new todos from {file_name}?"))
+        .title("Import todos")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Import".into(),
+            "Cancel".into(),
+        ))
+        .blocking_show()
+}
+
+fn plural(n: u32, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// Reported by the popup webview when an import ended: summarizes it in a
+/// native box and then shows the list with the new todos.
+#[tauri::command]
+fn import_finished(
+    app: AppHandle,
+    file_name: String,
+    imported: u32,
+    skipped: u32,
+    cancelled: bool,
+    error: Option<String>,
+) {
+    app.state::<Importing>().0.store(false, Ordering::Relaxed);
+    if cancelled {
+        return;
+    }
+    let (kind, mut text) = match &error {
+        Some(e) => (
+            MessageDialogKind::Error,
+            format!("Could not import {file_name}: {e}"),
+        ),
+        None if imported == 0 => (
+            MessageDialogKind::Info,
+            format!("Nothing new to import from {file_name}."),
+        ),
+        None => (
+            MessageDialogKind::Info,
+            format!("Imported {} from {file_name}.", plural(imported, "todo", "todos")),
+        ),
+    };
+    if error.is_some() && imported > 0 {
+        text.push_str(&format!(
+            "\n\n{} added before the error.",
+            plural(imported, "todo", "todos")
+        ));
+    }
+    if skipped > 0 {
+        text.push_str(&format!(
+            "\n\n{} skipped (no text, invalid due date or already done).",
+            plural(skipped, "entry", "entries")
+        ));
+    }
+    let handle = app.clone();
+    app.dialog()
+        .message(text)
+        .title("Import todos")
+        .kind(kind)
+        .show(move |_| {
+            if imported > 0 {
+                if let Some(win) = handle.get_webview_window("popup") {
+                    show_popup(&win);
+                }
+            }
+        });
 }
 
 fn show_about(app: &AppHandle) {
@@ -455,6 +662,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:purser.db", migrations)
@@ -467,7 +675,9 @@ pub fn run() {
             end_capture,
             open_about,
             open_help,
-            close_help
+            close_help,
+            confirm_import,
+            import_finished
         ])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
@@ -480,6 +690,7 @@ pub fn run() {
             app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
+            app.manage(Importing(AtomicBool::new(false)));
             app.manage(TrayShortcutItems(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
@@ -568,12 +779,14 @@ pub fn run() {
                     pretty_shortcut(&settings.quick_add_shortcut)
                 );
                 let list_text = format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut));
+                
 
                 let menu = Menu::with_items(
                     app,
                     &[
                         &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
                         &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
+                        &MenuItem::with_id(app, "import", "Import todos…", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
@@ -597,6 +810,7 @@ pub fn run() {
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "add" => toggle_quick_add(app),
                         "list" => toggle_popup(app),
+                        "import" => start_import(app),
                         "autostart" => {
                             // the click already flipped the checkbox; apply it
                             let enable = autostart_check.is_checked().unwrap_or(false);
