@@ -55,6 +55,43 @@ water plants
   `https://…` in the title are never mistaken for the separator
 - A half-typed todo survives closing the popup and is still there when it reopens
 
+### Importing todos
+
+Tray menu → **Import todos…** picks a `.txt` or `.csv`
+file and adds its todos. Import only ever adds — existing todos and
+categories are never changed. Examples live in [`samples/import`](samples/import).
+
+- **`.txt`** — one todo per line in quick-add syntax
+  (`title #category next monday //a note`); blank lines are ignored and a
+  leading `•` bullet (pasted from Confluence, Word, …) is dropped. Markdown
+  is not supported — `[ ]` or `[text](url)` stay plain text
+- **Links become notes** — a URL in the title moves into the note, and a
+  `#tag` at the very end of a note becomes the category when the title has
+  none (`call Bob //https://… #work`). A line that is only a URL has no
+  todo text and is skipped
+- **`.csv`** (`,` `;` or tab separated, quoted fields supported):
+  - with a header row: a `text` (or `todo`/`task`/`title`) column in
+    quick-add syntax, plus optional `due`, `category` and `notes` columns
+    that take precedence over what the text says. A row whose `due` cell
+    can't be read as a date is skipped; a `category` cell that isn't a
+    valid `#tag` name (e.g. contains spaces) is ignored
+  - Jira exports, recognized by the English column names `Issue key` and
+    `Summary`: the title is `KEY Summary` as-is, `Due Date` becomes the due
+    date, a `Description` column (if exported) the note. Issues in status
+    Done, Closed, Resolved, Cancelled, Rejected, Won't Do or Completed are
+    skipped. An export with localized (e.g. German) column names is read as
+    a plain CSV
+  - without a header: each row is joined into one quick-add line
+- Files may be UTF-8, UTF-16 with byte-order mark (Excel "Unicode text"), or
+  Latin-1 (older Excel CSV exports) — umlauts come through in all three
+- Exact copies of existing todos (same text, category, due date and note —
+  open or done) are not imported again; the summary says how many. Relative
+  dates with a time of day, like `in 2 weeks`, include the moment of import,
+  so importing such a line again later adds a new todo
+- More than 50 new todos need a confirmation; unreadable, empty, binary,
+  malformed or larger than 200 KB files are rejected with an error and
+  nothing is imported
+
 ### Categories and due dates
 
 - The list groups todos by color-coded category, ordered by due date within
