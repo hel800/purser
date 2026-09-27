@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { addTodo } from "./db";
+import { addTodo, existingTodoKeys, todoKey } from "./db";
 import { TAG_CHARS, isValidCategoryName, parseDueDate, parseTodo, splitNote, type ParsedTodo } from "./parse";
 
 /** Payload of the backend's `purser://import` event. */
@@ -242,19 +242,30 @@ export function parseImport(content: string, csv: boolean): ImportResult {
 export async function runImport({ fileName, csv, content }: ImportRequest): Promise<void> {
   let imported = 0;
   let skipped = 0;
+  let duplicates = 0;
   const finish = (cancelled: boolean, error: string | null) =>
-    invoke("import_finished", { fileName, imported, skipped, cancelled, error });
+    invoke("import_finished", { fileName, imported, skipped, duplicates, cancelled, error });
   try {
     const result = parseImport(content, csv);
     skipped = result.skipped;
+    // exact copies of stored todos (open or done) — or of an earlier line
+    // of the same file — are left out
+    const seen = await existingTodoKeys();
+    const fresh = result.items.filter((t) => {
+      const key = todoKey(t.text, t.topic, t.dueAt, t.notes);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    duplicates = result.items.length - fresh.length;
     if (
-      result.items.length > CONFIRM_ABOVE &&
-      !(await invoke<boolean>("confirm_import", { fileName, count: result.items.length }))
+      fresh.length > CONFIRM_ABOVE &&
+      !(await invoke<boolean>("confirm_import", { fileName, count: fresh.length }))
     ) {
       await finish(true, null);
       return;
     }
-    for (const todo of result.items) {
+    for (const todo of fresh) {
       await addTodo(todo.text, todo.topic, todo.dueAt, todo.notes);
       imported++;
     }

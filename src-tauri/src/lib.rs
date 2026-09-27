@@ -451,6 +451,7 @@ fn import_finished(
     file_name: String,
     imported: u32,
     skipped: u32,
+    duplicates: u32,
     cancelled: bool,
     error: Option<String>,
 ) {
@@ -476,6 +477,13 @@ fn import_finished(
         text.push_str(&format!(
             "\n\n{} added before the error.",
             plural(imported, "todo", "todos")
+        ));
+    }
+    if duplicates > 0 {
+        text.push_str(&format!(
+            "\n\n{} not imported because {} already.",
+            plural(duplicates, "todo was", "todos were"),
+            if duplicates == 1 { "it exists" } else { "they exist" }
         ));
     }
     if skipped > 0 {

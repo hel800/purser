@@ -83,6 +83,24 @@ export async function addTodo(
   );
 }
 
+/** Identity of a todo for duplicate detection: text, category (case-
+ *  insensitive like category names), due date and notes. */
+export function todoKey(
+  text: string,
+  category: string | null,
+  dueAt: string | null,
+  notes: string | null
+): string {
+  return JSON.stringify([text, category?.toLowerCase() ?? null, dueAt, notes || null]);
+}
+
+/** Keys of all stored todos, open and done. */
+export async function existingTodoKeys(): Promise<Set<string>> {
+  const d = await getDb();
+  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM}`);
+  return new Set(rows.map((t) => todoKey(t.text, t.category_name, t.due_at, t.notes)));
+}
+
 export async function openTodos(): Promise<Todo[]> {
   const d = await getDb();
   return d.select<Todo[]>(
