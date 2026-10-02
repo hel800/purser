@@ -24,6 +24,7 @@ export default defineConfig({
         quickadd: resolve(__dirname, "quickadd.html"),
         about: resolve(__dirname, "about.html"),
         help: resolve(__dirname, "help.html"),
+        list: resolve(__dirname, "list.html"),
       },
     },
   },

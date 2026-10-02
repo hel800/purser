@@ -50,6 +50,16 @@
         "resizable": false
       },
       {
+        "label": "list",
+        "url": "list.html",
+        "title": "Purser",
+        "width": 1000,
+        "height": 750,
+        "center": true,
+        "visible": false,
+        "resizable": true
+      },
+      {
         "label": "help",
         "url": "help.html",
         "title": "Keyboard shortcuts",

@@ -259,16 +259,19 @@ fn toggle_quick_add(app: &AppHandle) {
     }
 }
 
-/// Bottom-right of the primary monitor's work area — directly above the
-/// clock, clear of the taskbar and never spilling onto another monitor.
-/// (The tray with the clock lives on the primary monitor on Windows.)
-fn position_popup(win: &WebviewWindow) {
-    let monitor = win
-        .primary_monitor()
+/// The monitor the popup lives on: the primary one, since the tray with the
+/// clock is on the primary monitor on Windows. The full list opens there too.
+fn popup_monitor(win: &WebviewWindow) -> Option<tauri::Monitor> {
+    win.primary_monitor()
         .ok()
         .flatten()
-        .or_else(|| win.current_monitor().ok().flatten());
-    let (Some(monitor), Ok(size)) = (monitor, win.outer_size()) else {
+        .or_else(|| win.current_monitor().ok().flatten())
+}
+
+/// Bottom-right of the popup monitor's work area — directly above the
+/// clock, clear of the taskbar and never spilling onto another monitor.
+fn position_popup(win: &WebviewWindow) {
+    let (Some(monitor), Ok(size)) = (popup_monitor(win), win.outer_size()) else {
         return;
     };
     let wa = monitor.work_area();
@@ -289,6 +292,32 @@ fn toggle_popup(app: &AppHandle) {
             let _ = win.emit("purser://refresh", ());
         }
     }
+}
+
+/// Opens the full list window maximized on the popup's monitor. A window that
+/// is already showing is only focused, so a size or position the user chose
+/// is kept.
+fn show_list(app: &AppHandle) {
+    let Some(win) = app.get_webview_window("list") else {
+        return;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        if let Some(monitor) = popup_monitor(&win) {
+            // maximize() fills the monitor the window is on, so move it there
+            // first (un-maximize, or a maximized window stays where it was)
+            let _ = win.unmaximize();
+            let _ = win.set_position(monitor.work_area().position);
+        }
+        let _ = win.maximize();
+    }
+    let _ = win.unminimize();
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
+#[tauri::command]
+fn open_list(app: AppHandle) {
+    show_list(&app);
 }
 
 fn show_about(app: &AppHandle) {
@@ -467,6 +496,7 @@ pub fn run() {
             end_capture,
             open_about,
             open_help,
+            open_list,
             close_help
         ])
         .setup(|app| {
@@ -574,6 +604,7 @@ pub fn run() {
                     &[
                         &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
                         &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
+                        &MenuItem::with_id(app, "fulllist", "Show full list", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
@@ -597,6 +628,7 @@ pub fn run() {
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "add" => toggle_quick_add(app),
                         "list" => toggle_popup(app),
+                        "fulllist" => show_list(app),
                         "autostart" => {
                             // the click already flipped the checkbox; apply it
                             let enable = autostart_check.is_checked().unwrap_or(false);
@@ -659,7 +691,10 @@ pub fn run() {
             }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "help" {
+                if window.label() == "list" {
+                    // the full list is a normal window (taskbar, title bar):
+                    // it stays open next to other apps until closed
+                } else if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
                         // recording lost focus — most likely the combo is
                         // owned by another app and just triggered it. Keep
