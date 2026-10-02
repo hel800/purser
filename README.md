@@ -26,6 +26,8 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 | `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
+| `L` | Open the full list window |
+| `Ctrl+P` | Full list: print or save as PDF |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
@@ -73,6 +75,22 @@ water plants
   clickable and open in the browser. `N` (or the pencil in the panel) edits;
   `Ctrl+Enter` saves, saving an empty note removes it. Done view shows notes
   read-only.
+
+### Full list
+
+For the big picture, open the full list from the tray menu (**Show full
+list**) or press `L` in the popup. It opens maximized on the same screen as
+the popup and shows every todo with its category, due date and full notes.
+
+- Read-only: nothing in this window changes your todos; edits made in the
+  popup or quick-add show up right away
+- `Tab`, `T` and `F` switch views and filters just like in the popup
+- Scroll with the mouse wheel, `↑` / `↓` (or `j` / `k`), `PgUp` / `PgDn`,
+  `Space` and `Home` / `End`
+- `Ctrl+P` (or the **Print** button) prints the current view, or saves it as
+  PDF, with its filters as heading. Overdue and soon-due todos are marked in
+  text, so the printout works in black and white
+- `Esc` closes the window
 
 ## Data
 
