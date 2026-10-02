@@ -85,7 +85,9 @@ view and filters, and shows every todo with its full text and notes. `L` or
 you click elsewhere.
 
 - View only, as the pill at the top says: nothing here changes your todos.
-  Go back to the small popup to edit. Edits from quick-add show up right away
+  Go back to the small popup to edit. Pressing an edit key (`Enter`, `E`,
+  `D`, `C`, `N`, `Del`) or clicking a todo's circle briefly shows
+  "View only — press L to edit". Edits from quick-add show up right away
 - `Tab`, `T` and `F` switch views and filters just like in the popup
 - Scroll with the mouse wheel, `↑` / `↓` (or `j` / `k`), `PgUp` / `PgDn`,
   `Space` and `Home` / `End`

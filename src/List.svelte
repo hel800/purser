@@ -4,6 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { openTodos, doneTodos, type Todo } from "./lib/db";
   import { formatDue, dueStatus, linkify } from "./lib/parse";
   import {
@@ -38,6 +39,10 @@
   let filterMenu: "cat" | "due" | null = $state(null);
   let listEl = $state<HTMLElement>();
   let printedAt = $state(new Date());
+  let viewOnlyHint = $state(false);
+  let viewOnlyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const VIEW_ONLY_HINT_MS = 1800;
 
   // filters narrow the Open view only; Done always shows everything (as in the popup)
   let groups: Group[] = $derived.by(() => {
@@ -70,6 +75,13 @@
     filterMenu = null;
     const state: ViewState = { view, catFilter, dueFilter };
     invoke("close_list", { state });
+  }
+
+  /** Briefly explains why an edit key or a tick did nothing here. */
+  function flashViewOnly() {
+    viewOnlyHint = true;
+    clearTimeout(viewOnlyTimer);
+    viewOnlyTimer = setTimeout(() => (viewOnlyHint = false), VIEW_ONLY_HINT_MS);
   }
 
   function openHelp() {
@@ -193,9 +205,17 @@
           dueFilter = nextDue(dueFilter);
         }
         break;
+      // the popup's edit keys: say why nothing happens instead of ignoring them
       case "Enter":
-        // a previously clicked button may still hold focus — don't re-click it
+      case "e":
+      case "F2":
+      case "d":
+      case "c":
+      case "n":
+      case "Delete":
+        // also keeps a previously clicked button from being re-clicked by Enter
         e.preventDefault();
+        flashViewOnly();
         break;
       case "?":
       case "F1":
@@ -266,7 +286,9 @@
             {@const status = view === "open" ? dueStatus(todo.due_at) : null}
             <div class="todo">
               <div class="row">
-                <span class="check">{view === "done" ? "✓" : "○"}</span>
+                <button class="check" tabindex="-1" title="View only — press L to edit" onclick={flashViewOnly}>
+                  {view === "done" ? "✓" : "○"}
+                </button>
                 <span class="text">{todo.text}</span>
                 {#if todo.due_at}
                   <span class="due" class:overdue={status === "overdue"} class:soon={status === "soon"}>
@@ -297,6 +319,12 @@
       {/each}
     </div>
   </div>
+
+  {#if viewOnlyHint}
+    <div class="toast" role="status" transition:fade={{ duration: 150 }}>
+      View only — press <kbd>L</kbd> to edit
+    </div>
+  {/if}
 
   <footer>
     <span class="hints">
@@ -414,10 +442,33 @@
     gap: 10px;
     align-items: baseline;
   }
-  /* not a button here: nothing can be ticked */
+  /* looks like the popup's checkbox but can't tick: a click shows the toast */
   .check {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
     color: var(--text-dim);
     opacity: 0.6;
+    cursor: default;
+  }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 56px;
+    transform: translateX(-50%);
+    z-index: 30;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+    font-size: 12px;
+    color: var(--text);
+    pointer-events: none;
   }
   .text {
     flex: 1;
@@ -556,6 +607,7 @@
     }
     header,
     footer,
+    .toast,
     :global(.filterbar) {
       display: none;
     }
