@@ -4,7 +4,6 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
-  import { fade } from "svelte/transition";
   import { openTodos, doneTodos, type Todo } from "./lib/db";
   import { formatDue, dueStatus, linkify } from "./lib/parse";
   import {
@@ -22,6 +21,7 @@
   import { initSettings } from "./lib/settings.svelte";
   import FilterBar from "./lib/FilterBar.svelte";
   import Logo from "./lib/Logo.svelte";
+  import Toast from "./lib/Toast.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
   // The full-size view is the popup's list blown up to the whole screen, and
@@ -39,10 +39,7 @@
   let filterMenu: "cat" | "due" | null = $state(null);
   let listEl = $state<HTMLElement>();
   let printedAt = $state(new Date());
-  let viewOnlyHint = $state(false);
-  let viewOnlyTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const VIEW_ONLY_HINT_MS = 1800;
+  let viewOnlyToast = $state<Toast>();
 
   // filters narrow the Open view only; Done always shows everything (as in the popup)
   let groups: Group[] = $derived.by(() => {
@@ -79,9 +76,7 @@
 
   /** Briefly explains why an edit key or a tick did nothing here. */
   function flashViewOnly() {
-    viewOnlyHint = true;
-    clearTimeout(viewOnlyTimer);
-    viewOnlyTimer = setTimeout(() => (viewOnlyHint = false), VIEW_ONLY_HINT_MS);
+    viewOnlyToast?.flash();
   }
 
   function openHelp() {
@@ -254,6 +249,11 @@
   {/if}
 
   <div class="list" bind:this={listEl}>
+    <!-- the repeating table head/foot give every printed page its top and
+         bottom margin (see @page); on screen the table is plain blocks -->
+    <table class="page-frame">
+      <thead><tr><td class="page-space"></td></tr></thead>
+      <tbody><tr><td>
     <div class="content">
       <div class="print-head">
         <h1>Purser — {viewTitle}</h1>
@@ -320,13 +320,12 @@
         </section>
       {/each}
     </div>
+      </td></tr></tbody>
+      <tfoot><tr><td class="page-space"></td></tr></tfoot>
+    </table>
   </div>
 
-  {#if viewOnlyHint}
-    <div class="toast" role="status" transition:fade={{ duration: 150 }}>
-      View only — press <kbd>L</kbd> to edit
-    </div>
-  {/if}
+  <Toast bind:this={viewOnlyToast}>View only — press <kbd>L</kbd> to edit</Toast>
 
   <footer>
     <span class="hints">
@@ -408,6 +407,16 @@
     flex: 1;
     overflow-y: auto;
   }
+  .page-frame,
+  .page-frame tbody,
+  .page-frame tr,
+  .page-frame td {
+    display: block;
+  }
+  .page-frame thead,
+  .page-frame tfoot {
+    display: none;
+  }
   /* keep lines readable on a wide screen */
   .content {
     max-width: 1100px;
@@ -453,24 +462,6 @@
     color: var(--text-dim);
     opacity: 0.6;
     cursor: default;
-  }
-  .toast {
-    position: fixed;
-    left: 50%;
-    bottom: 56px;
-    transform: translateX(-50%);
-    z-index: 30;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 6px 14px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
-    font-size: 12px;
-    color: var(--text);
-    pointer-events: none;
   }
   .text {
     flex: 1;
@@ -609,13 +600,36 @@
     }
     header,
     footer,
-    .toast,
     :global(.filterbar) {
       display: none;
     }
     .content {
       max-width: none;
       padding: 0;
+    }
+    .page-frame {
+      display: table;
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .page-frame thead {
+      display: table-header-group;
+    }
+    .page-frame tfoot {
+      display: table-footer-group;
+    }
+    .page-frame tbody {
+      display: table-row-group;
+    }
+    .page-frame tr {
+      display: table-row;
+    }
+    .page-frame td {
+      display: table-cell;
+      padding: 0;
+    }
+    .page-space {
+      height: 12mm;
     }
     .print-head {
       display: flex;
@@ -657,15 +671,10 @@
     }
   }
 
-  /* defining a margin box replaces the browser's own header and footer
-     (date, title, localhost URL) — the first line already has the date */
+  /* no top/bottom page margin leaves the browser no room for its own
+     header and footer (date, title, localhost URL), so they are dropped
+     even with "Headers and footers" ticked; .page-space adds the room back */
   @page {
-    margin: 15mm;
-    @bottom-right {
-      content: counter(page) " / " counter(pages);
-      font-family: "Segoe UI", system-ui, sans-serif;
-      font-size: 9pt;
-      color: #555;
-    }
+    margin: 0 15mm;
   }
 </style>

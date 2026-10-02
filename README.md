@@ -27,7 +27,7 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
 | `L` | Toggle between the small popup and the full-size view |
-| `Ctrl+P` | Full-size view: print or save as PDF |
+| `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
@@ -93,7 +93,8 @@ you click elsewhere.
   `Space` and `Home` / `End`
 - `Ctrl+P` (or the **Print** button) prints the current view, or saves it as
   PDF, with its filters as heading. Overdue and soon-due todos are marked in
-  text, so the printout works in black and white
+  text, so the printout works in black and white. The browser's own header
+  and footer (date, URL) are left out, whatever the print dialog says
 
 ## Data
 
