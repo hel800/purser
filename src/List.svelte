@@ -98,9 +98,11 @@
     listEl?.scrollTo({ top: 0 });
   }
 
-  function print() {
+  async function print() {
     filterMenu = null;
     printedAt = new Date();
+    // the dialog takes focus; without this the view would hide on blur
+    await invoke("begin_print");
     window.print();
   }
 
@@ -648,9 +650,22 @@
     .link {
       color: #000;
     }
+    /* category colors are backgrounds, which print drops by default */
+    .dot {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
   }
 
+  /* defining a margin box replaces the browser's own header and footer
+     (date, title, localhost URL) — the first line already has the date */
   @page {
     margin: 15mm;
+    @bottom-right {
+      content: counter(page) " / " counter(pages);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 9pt;
+      color: #555;
+    }
   }
 </style>

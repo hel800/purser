@@ -108,6 +108,11 @@ struct SheetOwner(Mutex<Option<String>>);
 /// of silently disappearing.
 struct Capturing(AtomicBool);
 
+/// True while the full-size view's print dialog is open. The dialog takes
+/// focus from the view, which must not hide (as it would on any other blur)
+/// or the dialog disappears with it.
+struct Printing(AtomicBool);
+
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
         .app_config_dir()
@@ -332,6 +337,13 @@ fn open_list(app: AppHandle, state: serde_json::Value) {
     show_list(&app, state);
 }
 
+/// Called right before `window.print()`; cleared when the view regains focus
+/// after the dialog closes (see `on_window_event`).
+#[tauri::command]
+fn begin_print(app: AppHandle) {
+    app.state::<Printing>().0.store(true, Ordering::Relaxed);
+}
+
 #[tauri::command]
 fn close_list(app: AppHandle, state: serde_json::Value) {
     hide_list(&app, state);
@@ -515,6 +527,7 @@ pub fn run() {
             open_help,
             open_list,
             close_list,
+            begin_print,
             close_help
         ])
         .setup(|app| {
@@ -528,6 +541,7 @@ pub fn run() {
             app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
+            app.manage(Printing(AtomicBool::new(false)));
             app.manage(TrayShortcutItems(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
@@ -707,9 +721,15 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::Focused(true) if window.label() == "list" => {
+                // back from the print dialog (or any other return): blur hides again
+                window.app_handle().state::<Printing>().0.store(false, Ordering::Relaxed);
+            }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "help" {
+                if window.label() == "list" && app.state::<Printing>().0.load(Ordering::Relaxed) {
+                    // the print dialog took focus — keep the view open under it
+                } else if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
                         // recording lost focus — most likely the combo is
                         // owned by another app and just triggered it. Keep
