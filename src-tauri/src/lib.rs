@@ -294,30 +294,47 @@ fn toggle_popup(app: &AppHandle) {
     }
 }
 
-/// Opens the full list window maximized on the popup's monitor. A window that
-/// is already showing is only focused, so a size or position the user chose
-/// is kept.
-fn show_list(app: &AppHandle) {
+/// Swaps the small popup for the full-size view: the same list, view-only,
+/// covering the popup monitor's work area. `state` (view and filters, or
+/// null for a fresh Open view) is handed over so it feels like one window.
+fn show_list(app: &AppHandle, state: serde_json::Value) {
     let Some(win) = app.get_webview_window("list") else {
         return;
     };
-    if !win.is_visible().unwrap_or(false) {
-        if let Some(monitor) = popup_monitor(&win) {
-            // maximize() fills the monitor the window is on, so move it there
-            // first (un-maximize, or a maximized window stays where it was)
-            let _ = win.unmaximize();
-            let _ = win.set_position(monitor.work_area().position);
-        }
-        let _ = win.maximize();
+    if let Some(monitor) = popup_monitor(&win) {
+        let area = monitor.work_area();
+        let _ = win.set_position(area.position);
+        let _ = win.set_size(area.size);
     }
-    let _ = win.unminimize();
+    let _ = win.emit("purser://list-state", state);
     let _ = win.show();
     let _ = win.set_focus();
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.hide();
+    }
+}
+
+/// Back from the full-size view to the small popup, keeping view and filters.
+fn hide_list(app: &AppHandle, state: serde_json::Value) {
+    if let Some(win) = app.get_webview_window("list") {
+        let _ = win.hide();
+    }
+    if let Some(popup) = app.get_webview_window("popup") {
+        position_popup(&popup);
+        let _ = popup.show();
+        let _ = popup.set_focus();
+        let _ = popup.emit("purser://refresh", state);
+    }
 }
 
 #[tauri::command]
-fn open_list(app: AppHandle) {
-    show_list(&app);
+fn open_list(app: AppHandle, state: serde_json::Value) {
+    show_list(&app, state);
+}
+
+#[tauri::command]
+fn close_list(app: AppHandle, state: serde_json::Value) {
+    hide_list(&app, state);
 }
 
 fn show_about(app: &AppHandle) {
@@ -497,6 +514,7 @@ pub fn run() {
             open_about,
             open_help,
             open_list,
+            close_list,
             close_help
         ])
         .setup(|app| {
@@ -628,7 +646,7 @@ pub fn run() {
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "add" => toggle_quick_add(app),
                         "list" => toggle_popup(app),
-                        "fulllist" => show_list(app),
+                        "fulllist" => show_list(app, serde_json::Value::Null),
                         "autostart" => {
                             // the click already flipped the checkbox; apply it
                             let enable = autostart_check.is_checked().unwrap_or(false);
@@ -691,10 +709,7 @@ pub fn run() {
             }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "list" {
-                    // the full list is a normal window (taskbar, title bar):
-                    // it stays open next to other apps until closed
-                } else if window.label() == "help" {
+                if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
                         // recording lost focus — most likely the combo is
                         // owned by another app and just triggered it. Keep

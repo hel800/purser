@@ -96,3 +96,11 @@ export function groupByCategory(todos: Todo[]): Group[] {
   }
   return [...map.values()];
 }
+
+/** View and filters handed between the popup and the full-size view, so
+ *  toggling with L feels like resizing one window. */
+export interface ViewState {
+  view: "open" | "done";
+  catFilter: CategoryFilter;
+  dueFilter: DueFilter;
+}

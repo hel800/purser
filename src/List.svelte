@@ -16,13 +16,16 @@
     type CategoryFilter,
     type DueFilter,
     type Group,
+    type ViewState,
   } from "./lib/filters";
   import { initSettings } from "./lib/settings.svelte";
   import FilterBar from "./lib/FilterBar.svelte";
   import Logo from "./lib/Logo.svelte";
+  import wordmark from "./assets/purser-wordmark.png";
 
-  // The full list is read-only: it shows everything the popup can't fit and
-  // prints it. Nothing in this window writes to the database.
+  // The full-size view is the popup's list blown up to the whole screen, and
+  // view-only: it shows everything the popup can't fit and prints it. Nothing
+  // in this window writes to the database; L or Esc goes back to the popup.
 
   type View = "open" | "done";
 
@@ -62,6 +65,17 @@
     todos = view === "open" ? await openTodos() : await doneTodos();
   }
 
+  /** Back to the small popup, which takes over view and filters. */
+  function backToPopup() {
+    filterMenu = null;
+    const state: ViewState = { view, catFilter, dueFilter };
+    invoke("close_list", { state });
+  }
+
+  function openHelp() {
+    invoke("open_help");
+  }
+
   async function switchView(v: View) {
     if (view === v) return;
     // fetch first, then commit view + data together (no intermediate render)
@@ -91,9 +105,23 @@
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
       if (focused) reload();
     });
+    // sent before the window shows: the popup's view and filters, or null
+    // (opened from the tray) for a fresh Open view
+    const unlistenState = listen<ViewState | null>("purser://list-state", async (e) => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      const state: ViewState = e.payload ?? { view: "open", catFilter: null, dueFilter: "all" };
+      const data = state.view === "open" ? await openTodos() : await doneTodos();
+      view = state.view;
+      todos = data;
+      catFilter = state.catFilter;
+      dueFilter = state.dueFilter;
+      filterMenu = null;
+      listEl?.scrollTo({ top: 0 });
+    });
     return () => {
       unlistenChanged.then((f) => f());
       unlistenFocus.then((f) => f());
+      unlistenState.then((f) => f());
     };
   });
 
@@ -114,7 +142,9 @@
     const page = (listEl?.clientHeight ?? 400) - ROW_SCROLL;
     switch (e.key) {
       case "Escape":
-        await win.hide();
+      case "l":
+        e.preventDefault();
+        backToPopup();
         break;
       case "ArrowDown":
       case "j":
@@ -170,7 +200,7 @@
       case "?":
       case "F1":
         e.preventDefault();
-        invoke("open_help");
+        openHelp();
         break;
     }
   }
@@ -181,10 +211,20 @@
 <main>
   <header>
     <Logo size={20} />
-    <button class="tab" class:active={view === "open"} onclick={() => switchView("open")}>Open</button>
-    <button class="tab" class:active={view === "done"} onclick={() => switchView("done")}>Done</button>
+    <button class="tab" class:active={view === "open"} onclick={() => switchView("open")}>
+      Open
+    </button>
+    <button class="tab" class:active={view === "done"} onclick={() => switchView("done")}>
+      Done
+    </button>
+    <button
+      class="view-only"
+      title="Nothing can be changed here. Press L or Esc to go back to the small list and edit."
+      onclick={backToPopup}
+    >
+      View only · <kbd>L</kbd> to edit
+    </button>
     <span class="hint">Tab to switch</span>
-    <button class="print-btn" onclick={print} title="Print or save as PDF (Ctrl+P)">Print</button>
   </header>
 
   {#if view === "open"}
@@ -257,13 +297,32 @@
       {/each}
     </div>
   </div>
+
+  <footer>
+    <span class="hints">
+      <span class="hint"><kbd>↑</kbd> <kbd>↓</kbd> scroll</span>
+      {#if view === "open"}
+        <span class="hint"><kbd>T</kbd> category</span>
+        <span class="hint"><kbd>F</kbd> due date</span>
+      {/if}
+      <span class="hint"><kbd>Ctrl+P</kbd> print</span>
+      <span class="hint"><kbd>L</kbd> / <kbd>Esc</kbd> small view</span>
+    </span>
+    <span class="footer-actions">
+      <button class="small-btn" onclick={print} title="Print or save as PDF (Ctrl+P)">Print</button>
+      <button class="small-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
+      <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
+    </span>
+  </footer>
 </main>
 
 <style>
+  /* header, footer and rows mirror Popup.svelte so both sizes look alike */
   main {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    border: 1px solid var(--border);
   }
   header {
     display: flex;
@@ -285,34 +344,45 @@
     color: var(--text);
     border-bottom: 2px solid var(--accent);
   }
-  .hint {
+  header .hint {
     margin-left: auto;
     font-size: 11px;
-    color: var(--text-dim);
+    font-weight: 400;
   }
-  .print-btn {
+  /* the one place that says this list can't be edited — a dashed pill,
+     clickable as the way back to the editable popup */
+  .view-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 8px;
     background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px 10px;
+    border: 1px dashed var(--text-dim);
+    border-radius: 999px;
+    padding: 1px 10px;
     font: inherit;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-dim);
     cursor: pointer;
+    white-space: nowrap;
   }
-  .print-btn:hover {
+  .view-only:hover {
     color: var(--accent);
     border-color: var(--accent);
+  }
+  .view-only kbd {
+    padding: 0 4px;
+    font-size: 10px;
   }
   .list {
     flex: 1;
     overflow-y: auto;
   }
-  /* keep lines readable on a maximized wide screen */
+  /* keep lines readable on a wide screen */
   .content {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 8px 0 24px;
+    padding: 6px 0 24px;
   }
   .print-head {
     display: none;
@@ -325,26 +395,29 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--accent);
-    padding: 14px 14px 4px;
+    padding: 4px 14px;
+    min-height: 34px;
     line-height: 1;
   }
   .dot {
     width: 8px;
     height: 8px;
+    margin-top: 1px;
     border-radius: 50%;
     flex-shrink: 0;
   }
   .todo {
     padding: 7px 14px;
-    border-bottom: 1px solid var(--border);
   }
   .row {
     display: flex;
     gap: 10px;
     align-items: baseline;
   }
+  /* not a button here: nothing can be ticked */
   .check {
     color: var(--text-dim);
+    opacity: 0.6;
   }
   .text {
     flex: 1;
@@ -366,10 +439,13 @@
   .due-flag {
     display: none;
   }
+  /* same panel as the popup's expanded notes, always open */
   .notes {
-    margin: 4px 0 2px 24px;
-    padding: 4px 10px;
+    margin: 4px 0 0 20px;
+    padding: 6px 10px;
+    background: var(--bg-raised);
     border-left: 2px solid var(--border);
+    border-radius: 0 4px 4px 0;
     font-size: 12px;
     color: var(--text-dim);
     white-space: pre-wrap;
@@ -393,6 +469,67 @@
     text-align: center;
     padding: 30px 0;
   }
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    font-size: 11px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+  .hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 12px;
+    align-items: center;
+  }
+  .hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  kbd {
+    display: inline-block;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .small-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 7px;
+    font: inherit;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .small-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .wordmark {
+    height: 9px;
+    opacity: 0.75;
+    display: block;
+  }
 
   @media print {
     /* light theme with black text, whatever the screen theme is */
@@ -414,10 +551,11 @@
       height: auto;
       overflow: visible;
     }
-    :global(body) {
-      user-select: none;
+    main {
+      border: none;
     }
     header,
+    footer,
     :global(.filterbar) {
       display: none;
     }

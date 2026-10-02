@@ -14,6 +14,7 @@
     type CategoryFilter,
     type DueFilter,
     type Group,
+    type ViewState,
   } from "./lib/filters";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
@@ -136,13 +137,21 @@
   onMount(() => {
     initSettings();
     reload();
-    const unlisten = listen("purser://refresh", async () => {
+    // payload: the state the full-size view hands back, or null for a fresh open
+    const unlisten = listen<ViewState | null>("purser://refresh", async (e) => {
       // the window is hidden, not destroyed — drop focus a click may have
       // left on a button, or Enter would re-activate it next time
       (document.activeElement as HTMLElement | null)?.blur?.();
-      const data = await openTodos();
-      view = "open";
+      const state = e.payload;
+      const nextView = state?.view ?? "open";
+      const data = nextView === "open" ? await openTodos() : await doneTodos();
+      view = nextView;
       todos = data;
+      if (state) {
+        catFilter = state.catFilter;
+        dueFilter = state.dueFilter;
+      }
+      filterMenu = null;
       selected = 0;
       editing = null;
       catEdit = null;
@@ -539,9 +548,9 @@
         await switchView(view === "open" ? "done" : "open");
         break;
       case "l":
-        // the popup hides itself when the list window takes focus
+        // swap to the full-size view, keeping view and filters
         e.preventDefault();
-        invoke("open_list");
+        invoke("open_list", { state: { view, catFilter, dueFilter } satisfies ViewState });
         break;
       case "?":
         e.preventDefault();
