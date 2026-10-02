@@ -20,6 +20,7 @@
   import { slide } from "svelte/transition";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
+  import Toast from "./lib/Toast.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
   type View = "open" | "done";
@@ -444,6 +445,19 @@
     return { update };
   }
 
+  let printToast = $state<Toast>();
+
+  // the small popup would print only its visible rows: point to the
+  // full-size view instead. Capture phase, because the edit inputs stop
+  // their keys from bubbling to the window.
+  function blockPrint(e: KeyboardEvent) {
+    if (e.ctrlKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      e.stopPropagation();
+      printToast?.flash();
+    }
+  }
+
   async function onKeydown(e: KeyboardEvent) {
     if (editing || notesEdit) return;
     if (filterMenu) {
@@ -572,7 +586,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onkeydowncapture={blockPrint} />
 
 <main>
   <header>
@@ -784,6 +798,8 @@
       {/each}
     {/each}
   </div>
+
+  <Toast bind:this={printToast}>To print, open the full-size view with <kbd>L</kbd></Toast>
 
   <footer>
     <span class="hints">
