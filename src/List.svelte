@@ -628,8 +628,12 @@
       display: table-cell;
       padding: 0;
     }
-    .page-space {
+    /* top: the whole page margin; bottom: adds to the 7mm @page margin */
+    thead .page-space {
       height: 12mm;
+    }
+    tfoot .page-space {
+      height: 5mm;
     }
     .print-head {
       display: flex;
@@ -671,10 +675,19 @@
     }
   }
 
-  /* no top/bottom page margin leaves the browser no room for its own
-     header and footer (date, title, localhost URL), so they are dropped
-     even with "Headers and footers" ticked; .page-space adds the room back */
+  /* Chromium draws its own header/footer (date, title, localhost URL) 15pt
+     from the paper edge and hides each text that would overlap the content
+     area, i.e. whenever the top/bottom page margin is under ~25pt (9mm).
+     So: no top margin, a 7mm bottom margin that only fits our page number,
+     and .page-space adds the room back. Works even with "Headers and
+     footers" ticked in the print dialog. */
   @page {
-    margin: 0 15mm;
+    margin: 0 15mm 7mm;
+    @bottom-right {
+      content: counter(page) " / " counter(pages);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      font-size: 8pt;
+      color: #555;
+    }
   }
 </style>
