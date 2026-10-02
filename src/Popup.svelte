@@ -538,6 +538,11 @@
         e.preventDefault();
         await switchView(view === "open" ? "done" : "open");
         break;
+      case "l":
+        // the popup hides itself when the list window takes focus
+        e.preventDefault();
+        invoke("open_list");
+        break;
       case "?":
         e.preventDefault();
         openHelp();
