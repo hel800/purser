@@ -83,6 +83,14 @@ export function formatDue(iso: string | null): string {
   return date + time;
 }
 
+/** Split note text into plain segments and clickable https?:// links. */
+export function linkify(text: string): { link: boolean; value: string }[] {
+  return text
+    .split(/(https?:\/\/\S+)/g)
+    .filter((part) => part !== "")
+    .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
+}
+
 export function isOverdue(iso: string | null): boolean {
   return iso !== null && new Date(iso).getTime() < Date.now();
 }

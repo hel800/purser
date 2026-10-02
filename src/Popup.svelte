@@ -4,7 +4,20 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, isValidCategoryName, isToday, isThisWeek } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, isValidCategoryName, linkify } from "./lib/parse";
+  import {
+    DUE_CYCLE,
+    DUE_LABELS,
+    categoryCycle,
+    categoryInfo,
+    filterTodos,
+    groupByCategory,
+    nextCategory,
+    nextDue,
+    type CategoryFilter,
+    type DueFilter,
+    type Group,
+  } from "./lib/filters";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
   import { initSettings } from "./lib/settings.svelte";
@@ -32,57 +45,24 @@
 
   // filter bar (Open view only): category (null = all, -1 = uncategorized)
   // and a due-date stage, both cycled by keyboard or click
-  type DueFilter = "all" | "today" | "week" | "soon" | "overdue" | "nodate";
-  let catFilter: number | null = $state(null);
+  let catFilter: CategoryFilter = $state(null);
   let dueFilter: DueFilter = $state("all");
 
-  const DUE_CYCLE: DueFilter[] = ["all", "today", "week", "soon", "overdue", "nodate"];
-  const DUE_LABELS: Record<DueFilter, string> = {
-    all: "Any due date",
-    today: "Today",
-    week: "This week",
-    soon: "Soon or overdue",
-    overdue: "Overdue",
-    nodate: "No date",
-  };
-
-  // categories present in the open list, in list order, for the T cycle
-  let catCycle = $derived.by(() => {
-    const ids: (number | null)[] = [null];
-    for (const t of todos) {
-      const key = t.category_id ?? -1;
-      if (!ids.includes(key)) ids.push(key);
-    }
-    return ids;
-  });
-
-  function catInfoFor(c: number | null): { label: string; color: string | null } {
-    if (c === null) return { label: "All categories", color: null };
-    if (c === -1) return { label: "No category", color: null };
-    const t = todos.find((t) => t.category_id === c);
-    return { label: t?.category_name ?? "?", color: t?.category_color ?? null };
-  }
-
-  let catFilterInfo = $derived(catInfoFor(catFilter));
+  let catCycle = $derived(categoryCycle(todos));
+  let catFilterInfo = $derived(categoryInfo(todos, catFilter));
 
   // clicking a pill opens a dropdown; the T/F keys cycle directly
   let filterMenu: "cat" | "due" | null = $state(null);
 
   function cycleCat() {
-    const i = catCycle.indexOf(catFilter);
-    catFilter = catCycle[(i + 1) % catCycle.length] ?? null;
-    selected = 0;
-    filterMenu = null;
+    pickCat(nextCategory(todos, catFilter));
   }
 
   function cycleDue() {
-    const i = DUE_CYCLE.indexOf(dueFilter);
-    dueFilter = DUE_CYCLE[(i + 1) % DUE_CYCLE.length];
-    selected = 0;
-    filterMenu = null;
+    pickDue(nextDue(dueFilter));
   }
 
-  function pickCat(c: number | null) {
+  function pickCat(c: CategoryFilter) {
     catFilter = c;
     selected = 0;
     filterMenu = null;
@@ -94,30 +74,8 @@
     filterMenu = null;
   }
 
-  function matchesDue(t: Todo): boolean {
-    switch (dueFilter) {
-      case "all":
-        return true;
-      case "today":
-        return t.due_at !== null && isToday(t.due_at);
-      case "week":
-        return t.due_at !== null && isThisWeek(t.due_at);
-      case "soon":
-        return dueStatus(t.due_at) !== null;
-      case "overdue":
-        return dueStatus(t.due_at) === "overdue";
-      case "nodate":
-        return t.due_at === null;
-    }
-  }
-
   // filters narrow the Open view only; Done always shows everything
-  let visibleTodos = $derived.by(() => {
-    if (view !== "open") return todos;
-    return todos.filter(
-      (t) => (catFilter === null || (t.category_id ?? -1) === catFilter) && matchesDue(t)
-    );
-  });
+  let visibleTodos = $derived(view === "open" ? filterTodos(todos, catFilter, dueFilter) : todos);
 
   // mirror the input's horizontal scroll so the ghost overlay stays glued to
   // the caret when a long name scrolls
@@ -179,29 +137,9 @@
 
   const win = getCurrentWindow();
 
-  interface Group {
-    id: number | null;
-    topic: string;
-    color: string | null;
-    todos: Todo[];
-  }
-
   let groups: Group[] = $derived.by(() => {
     if (view === "done") return todos.length ? [{ id: null, topic: "Done", color: null, todos }] : [];
-    const map = new Map<number, Group>();
-    for (const t of visibleTodos) {
-      const key = t.category_id ?? -1;
-      if (!map.has(key)) {
-        map.set(key, {
-          id: t.category_id,
-          topic: t.category_name || "No topic",
-          color: t.category_color,
-          todos: [],
-        });
-      }
-      map.get(key)!.todos.push(t);
-    }
-    return [...map.values()];
+    return groupByCategory(visibleTodos);
   });
 
   async function reload() {
@@ -330,14 +268,6 @@
 
   function focusInput(node: HTMLInputElement | HTMLTextAreaElement) {
     node.focus();
-  }
-
-  /** Split note text into plain segments and clickable https?:// links. */
-  function linkify(text: string): { link: boolean; value: string }[] {
-    return text
-      .split(/(https?:\/\/\S+)/g)
-      .filter((part) => part !== "")
-      .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
   }
 
   /** Indicator click: toggle existing notes, or start writing the first one. */
@@ -688,7 +618,7 @@
         {#if filterMenu === "cat"}
           <div class="fmenu">
             {#each catCycle as c (c ?? "all")}
-              {@const info = catInfoFor(c)}
+              {@const info = categoryInfo(todos, c)}
               <button class="fmenu-item" class:sel={catFilter === c} onclick={() => pickCat(c)}>
                 {#if info.color}
                   <span class="dot" style:background={info.color}></span>
