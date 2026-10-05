@@ -63,8 +63,26 @@
 
   const win = getCurrentWindow();
 
-  async function reload() {
-    todos = view === "open" ? await openTodos() : await doneTodos();
+  // Loads can overlap: the hand-over state from the popup and the focus
+  // reload fire within the same moment. `wanted` is the view the latest
+  // load is heading for (set synchronously, unlike `view`, which only
+  // changes once data is in), and the sequence number lets only the newest
+  // fetch commit, so a stale fetch can never overwrite a fresh one.
+  let wanted: View = "open";
+  let loadSeq = 0;
+
+  /** Fetches `v`'s todos and commits view + data together (no intermediate render). */
+  async function load(v: View) {
+    wanted = v;
+    const seq = ++loadSeq;
+    const data = v === "open" ? await openTodos() : await doneTodos();
+    if (seq !== loadSeq) return; // a newer load superseded this one
+    view = v;
+    todos = data;
+  }
+
+  function reload() {
+    return load(wanted);
   }
 
   /** Back to the small popup, which takes over view and filters. */
@@ -84,11 +102,8 @@
   }
 
   async function switchView(v: View) {
-    if (view === v) return;
-    // fetch first, then commit view + data together (no intermediate render)
-    const data = v === "open" ? await openTodos() : await doneTodos();
-    view = v;
-    todos = data;
+    if (wanted === v) return;
+    await load(v);
     filterMenu = null;
     listEl?.scrollTo({ top: 0 });
   }
@@ -119,9 +134,7 @@
     const unlistenState = listen<ViewState | null>("purser://list-state", async (e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       const state: ViewState = e.payload ?? { view: "open", catFilter: null, dueFilter: "all" };
-      const data = state.view === "open" ? await openTodos() : await doneTodos();
-      view = state.view;
-      todos = data;
+      await load(state.view);
       catFilter = state.catFilter;
       dueFilter = state.dueFilter;
       filterMenu = null;
