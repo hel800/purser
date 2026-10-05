@@ -88,7 +88,8 @@
   /** Back to the small popup, which takes over view and filters. */
   function backToPopup() {
     filterMenu = null;
-    const state: ViewState = { view, catFilter, dueFilter };
+    // `wanted`, not `view`: a switch may still be loading when L is pressed
+    const state: ViewState = { view: wanted, catFilter, dueFilter };
     invoke("close_list", { state });
   }
 
@@ -201,7 +202,8 @@
         break;
       case "Tab":
         e.preventDefault();
-        await switchView(view === "open" ? "done" : "open");
+        // toggle from the view being loaded, so two quick Tabs cancel out
+        await switchView(wanted === "open" ? "done" : "open");
         break;
       case "t":
         if (view === "open") {
