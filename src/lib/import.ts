@@ -244,8 +244,13 @@ export async function runImport({ fileName, csv, content }: ImportRequest): Prom
   let skipped = 0;
   let duplicates = 0;
   const finish = (cancelled: boolean, error: string | null) =>
-    invoke("import_finished", { fileName, imported, skipped, duplicates, cancelled, error });
+    invoke("import_finished", { fileName, imported, skipped, duplicates, cancelled, error }).catch(
+      () => {}
+    );
   try {
+    // tells the backend the request arrived; without it the backend gives
+    // up after a moment and lets the user try again
+    await invoke("import_started");
     const result = parseImport(content, csv);
     skipped = result.skipped;
     // exact copies of stored todos (open or done) — or of an earlier line

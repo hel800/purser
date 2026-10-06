@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -115,6 +115,18 @@ struct Capturing(AtomicBool);
 /// True from opening the import file dialog until the popup webview reports
 /// the import finished, so a second menu click can't start a parallel one.
 struct Importing(AtomicBool);
+
+/// Guards against `Importing` getting stuck: the file content goes to the
+/// popup webview as an event, which has no delivery guarantee (no listener
+/// yet, webview reloading). The webview acknowledges with `import_started`;
+/// if that doesn't arrive within `IMPORT_ACK_TIMEOUT`, the import is given
+/// up. The generation tells a late watchdog apart from a newer import.
+struct ImportAck {
+    generation: AtomicU32,
+    acked: AtomicBool,
+}
+
+const IMPORT_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
@@ -352,6 +364,9 @@ fn import_path(app: &AppHandle, path: &std::path::Path) {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string());
     let result = read_import_file(path).and_then(|(csv, content)| {
+        let ack = app.state::<ImportAck>();
+        ack.acked.store(false, Ordering::Relaxed);
+        let generation = ack.generation.fetch_add(1, Ordering::Relaxed) + 1;
         app.emit_to(
             "popup",
             "purser://import",
@@ -361,7 +376,9 @@ fn import_path(app: &AppHandle, path: &std::path::Path) {
                 content,
             },
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        watch_import_ack(app, generation, file_name.clone());
+        Ok(())
     });
     if let Err(reason) = result {
         app.state::<Importing>().0.store(false, Ordering::Relaxed);
@@ -371,6 +388,33 @@ fn import_path(app: &AppHandle, path: &std::path::Path) {
             format!("Could not import {file_name}: {reason}"),
         );
     }
+}
+
+/// Releases `Importing` with an error box if the popup webview has not
+/// acknowledged the request of this `generation` in time.
+fn watch_import_ack(app: &AppHandle, generation: u32, file_name: String) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(IMPORT_ACK_TIMEOUT);
+        let ack = handle.state::<ImportAck>();
+        if ack.generation.load(Ordering::Relaxed) != generation || ack.acked.load(Ordering::Relaxed)
+        {
+            return; // acknowledged, or a newer import took over
+        }
+        if handle.state::<Importing>().0.swap(false, Ordering::Relaxed) {
+            show_import_message(
+                &handle,
+                MessageDialogKind::Error,
+                format!("Could not import {file_name}: the import did not start. Please try again."),
+            );
+        }
+    });
+}
+
+/// The popup webview received the import request (see `ImportAck`).
+#[tauri::command]
+fn import_started(app: AppHandle) {
+    app.state::<ImportAck>().acked.store(true, Ordering::Relaxed);
 }
 
 /// Returns (is_csv, decoded text) or a user-facing reason why the file
@@ -685,6 +729,7 @@ pub fn run() {
             open_help,
             close_help,
             confirm_import,
+            import_started,
             import_finished
         ])
         .setup(|app| {
@@ -699,6 +744,10 @@ pub fn run() {
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
             app.manage(Importing(AtomicBool::new(false)));
+            app.manage(ImportAck {
+                generation: AtomicU32::new(0),
+                acked: AtomicBool::new(false),
+            });
             app.manage(TrayShortcutItems(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
