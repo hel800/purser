@@ -449,9 +449,20 @@ fn read_import_file(path: &std::path::Path) -> Result<(bool, String), String> {
     Ok((csv, text))
 }
 
+/// Windows-1252 code points for bytes 0x80–0x9F, where it differs from
+/// Latin-1 (which has C1 control characters there). The five unassigned
+/// bytes map to U+FFFD.
+const CP1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{FFFD}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{FFFD}', '\u{017D}', '\u{FFFD}',
+    '\u{FFFD}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{FFFD}', '\u{017E}', '\u{0178}',
+];
+
 /// Decodes UTF-8 (BOM stripped) and BOM-marked UTF-16 (Excel's "Unicode
-/// text"); anything else that isn't valid UTF-8 is read as Latin-1, which
-/// older Excel CSV exports use.
+/// text"); anything else that isn't valid UTF-8 is read as Windows-1252,
+/// which Excel's "ANSI" CSV exports on Windows use. It is Latin-1 except for
+/// 0x80–0x9F, where the euro sign, dashes and typographic quotes live.
 fn decode_text(bytes: &[u8]) -> String {
     let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
         let units: Vec<u16> = rest.chunks_exact(2).map(|c| from([c[0], c[1]])).collect();
@@ -463,7 +474,13 @@ fn decode_text(bytes: &[u8]) -> String {
         [0xFE, 0xFF, rest @ ..] => utf16(rest, u16::from_be_bytes),
         _ => match std::str::from_utf8(bytes) {
             Ok(s) => s.to_owned(),
-            Err(_) => bytes.iter().map(|&b| b as char).collect(),
+            Err(_) => bytes
+                .iter()
+                .map(|&b| match b {
+                    0x80..=0x9F => CP1252_HIGH[(b - 0x80) as usize],
+                    _ => b as char,
+                })
+                .collect(),
         },
     }
 }
