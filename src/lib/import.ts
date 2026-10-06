@@ -215,6 +215,9 @@ function parseHeaderRows(header: string[], rows: string[][], textCol: number): I
 
 function parseCsv(content: string): ImportResult {
   const rows = readCsv(content, detectDelimiter(content));
+  // only delimiters and whitespace: the backend's emptiness check passes
+  // such a file, but no row survives
+  if (rows.length === 0) return { items: [], skipped: 0 };
   const header = rows[0].map((h) => h.toLowerCase());
   if (header.includes("issue key") && header.includes("summary")) {
     return parseJiraRows(header, rows.slice(1));
