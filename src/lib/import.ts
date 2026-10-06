@@ -62,16 +62,21 @@ export function parseImportLine(raw: string): ParsedTodo | null {
   };
 }
 
-function parseTxt(content: string): ImportResult {
+/** One todo per non-blank line. */
+function parseLines(lines: string[]): ImportResult {
   const items: ParsedTodo[] = [];
   let skipped = 0;
-  for (const line of content.split(/\r?\n/)) {
+  for (const line of lines) {
     if (!line.trim()) continue;
     const todo = parseImportLine(line);
     if (todo) items.push(todo);
     else skipped++;
   }
   return { items, skipped };
+}
+
+function parseTxt(content: string): ImportResult {
+  return parseLines(content.split(/\r?\n/));
 }
 
 /** The delimiter used most often in the first line (outside quotes). */
@@ -226,8 +231,9 @@ function parseCsv(content: string): ImportResult {
   }
   const textCol = header.findIndex((h) => ["text", "todo", "task", "title"].includes(h));
   if (textCol >= 0) return parseHeaderRows(header, rows.slice(1), textCol);
-  // no header: every row is one quick-add line spread over its cells
-  return parseTxt(rows.map((r) => r.filter(Boolean).join(" ")).join("\n"));
+  // no header: every row is one quick-add line spread over its cells. Line
+  // breaks inside a quoted cell are flattened so a row stays one todo
+  return parseLines(rows.map((r) => r.filter(Boolean).join(" ").replace(/\s*\n\s*/g, " ")));
 }
 
 /** Parses the whole file up front, so a broken file imports nothing. */
