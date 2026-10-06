@@ -103,6 +103,8 @@ function readCsv(content: string, delim: string): string[][] {
         i++;
       } else if (ch === '"') {
         quoted = false;
+      } else if (ch === "\r" && content[i + 1] === "\n") {
+        // CRLF inside a quoted cell (Windows exports): keep only the \n
       } else {
         cell += ch;
       }
