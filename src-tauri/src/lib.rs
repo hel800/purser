@@ -45,6 +45,11 @@ struct Settings {
     quick_add_shortcut: String,
     #[serde(default = "default_list_shortcut")]
     list_shortcut: String,
+    /// Where to look for `latest.json` instead of the latest GitHub release.
+    /// Not exposed in the UI: a hand-edited settings.json entry for testing
+    /// pre-releases, e.g. `https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    update_endpoint: Option<String>,
 }
 
 fn default_hour24() -> bool {
@@ -65,6 +70,7 @@ impl Default for Settings {
             hour24: default_hour24(),
             quick_add_shortcut: default_quick_add_shortcut(),
             list_shortcut: default_list_shortcut(),
+            update_endpoint: None,
         }
     }
 }
@@ -291,6 +297,97 @@ fn toggle_popup(app: &AppHandle) {
     }
 }
 
+/// The update found by `check_update`, kept until `install_update` is asked
+/// for it (the webview only gets the `UpdateInfo` summary).
+struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    body: Option<String>,
+    date: Option<String>,
+}
+
+/// The updater from the plugin config, with the endpoint swapped for the
+/// `updateEndpoint` setting if one is present.
+fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let endpoint = app
+        .state::<Mutex<Settings>>()
+        .lock()
+        .unwrap()
+        .update_endpoint
+        .clone()
+        .filter(|u| !u.trim().is_empty());
+    let mut builder = app.updater_builder();
+    if let Some(url) = endpoint {
+        let url: tauri::Url = url.parse().map_err(|e| format!("updateEndpoint: {e}"))?;
+        builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// Asks the endpoint whether a newer version exists; remembers it for
+/// `install_update`. Errors (offline, no manifest yet) go to the webview,
+/// which treats them as "nothing found".
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let update = updater(&app)?.check().await.map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo {
+        version: u.version.clone(),
+        body: u.body.clone(),
+        date: u.date.map(|d| d.to_string()),
+    });
+    *app.state::<PendingUpdate>().0.lock().unwrap() = update;
+    Ok(info)
+}
+
+/// Downloads and installs the pending update, reporting the download as
+/// `purser://update-progress` percentages (null while the size is unknown).
+/// On Windows the installer takes over and the plugin exits the app; on
+/// other platforms the app restarts into the new version.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .state::<PendingUpdate>()
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or("no update to install")?;
+    let progress = app.clone();
+    let mut received: u64 = 0;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                received += chunk as u64;
+                let percent = total.map(|t| (received * 100 / t.max(1)).min(100) as u8);
+                let _ = progress.emit_to("popup", "purser://update-progress", percent);
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit_to("popup", "purser://update-progress", Some(100u8));
+    app.restart();
+}
+
+/// Tray "Check for updates…". The popup webview owns the updater and shows
+/// the outcome as a banner, so the popup is brought up if it is hidden.
+fn check_for_updates(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("popup") {
+        if !win.is_visible().unwrap_or(false) {
+            position_popup(&win);
+            let _ = win.show();
+            let _ = win.set_focus();
+            let _ = win.emit("purser://refresh", ());
+        }
+        let _ = win.emit("purser://check-update", ());
+    }
+}
+
 fn show_about(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("about") {
         let _ = win.center();
@@ -455,6 +552,9 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .plugin(tauri_plugin_opener::init())
+        // self-update from GitHub releases, driven by `check_update` and
+        // `install_update` below (the popup webview shows the banner)
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:purser.db", migrations)
@@ -467,7 +567,9 @@ pub fn run() {
             end_capture,
             open_about,
             open_help,
-            close_help
+            close_help,
+            check_update,
+            install_update
         ])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
@@ -481,6 +583,7 @@ pub fn run() {
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
             app.manage(TrayShortcutItems(Mutex::new(None)));
+            app.manage(PendingUpdate(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
             // UI: reset it to the default so display and registration agree
@@ -578,6 +681,7 @@ pub fn run() {
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
                         &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
+                        &MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?,
                         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
                     ],
                 )?;
@@ -624,6 +728,7 @@ pub fn run() {
                         "quit" => app.exit(0),
                         "help" => show_help(app, None),
                         "about" => show_about(app),
+                        "update" => check_for_updates(app),
                         _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
