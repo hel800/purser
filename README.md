@@ -8,6 +8,11 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 [Releases](https://github.com/hel800/purser/releases) page and run it
 (Windows 10/11 x64; WebView2 is bootstrapped automatically if missing).
 
+Once installed, Purser checks for a newer release when it starts and once a
+day after that. If there is one, the popup shows a banner — `U` installs it
+(the installer runs and Purser restarts); `✕` postpones it until the next
+check. Tray menu → **Check for updates…** looks right away.
+
 ## Usage
 
 | Shortcut | Action |
@@ -108,6 +113,47 @@ npm run tauri build    # produce NSIS installer (Windows)
 ```
 
 Requires Rust (MSVC toolchain on Windows) and Node.
+
+### Releasing
+
+Releases are built by the `release` GitHub workflow. Bump the version in
+`src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`,
+commit, then tag and push:
+
+```
+git tag v0.5.0
+git push origin v0.5.0
+```
+
+The workflow builds the installer, signs it for the updater and attaches the
+installer, the `.sig` file and `latest.json` to a **draft** release. Publish
+the draft to roll the version out — installed apps read
+`releases/latest/download/latest.json`.
+
+Updates are signed with a key pair created by `npm run tauri signer generate`.
+The public key lives in `tauri.conf.json`; the private key is the repository
+secret `TAURI_SIGNING_PRIVATE_KEY` (plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+if it has one). Keep a copy of the private key somewhere safe: without it no
+installed version can accept an update again. A local `npm run tauri build`
+needs the same key in the `TAURI_SIGNING_PRIVATE_KEY` environment variable
+(or its path in `TAURI_SIGNING_PRIVATE_KEY_PATH`), because
+`createUpdaterArtifacts` is on.
+
+#### Testing an update without affecting users
+
+Tags with a pre-release suffix (`v0.4.1-beta.1`) are marked as pre-release
+when the draft is published. Installed apps follow `releases/latest`, which
+skips pre-releases, so nobody else sees them. To make one installation look
+at a pre-release instead, add to its `settings.json`
+(`%APPDATA%\com.sschaefer.purser\settings.json`, with the app closed):
+
+```json
+"updateEndpoint": "https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json"
+```
+
+A full dry run: release `v0.4.1-beta.1` and install it, set `updateEndpoint`
+to the `v0.4.1-beta.2` manifest, release `v0.4.1-beta.2`, start Purser and
+use tray → **Check for updates…**. Remove the entry afterwards.
 
 ## Notes
 Developed with the support of AI (Anthropic Claude Code)
