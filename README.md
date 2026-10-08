@@ -156,18 +156,22 @@ Requires Rust (MSVC toolchain on Windows) and Node.
 
 ### Releasing
 
-Releases are built by the `release` GitHub workflow. Bump the version in
-`src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`,
-commit, then tag and push:
+Releases are built by the `release` GitHub workflow. Main only takes pull
+requests, so the bump goes through one: on a branch, set the version in
+`src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`
+(and refresh both lock files), open a pull request and merge it. Then tag the
+merge commit on main and push the tag:
 
 ```
+git checkout main && git pull
 git tag v0.5.0
 git push origin v0.5.0
 ```
 
 The workflow builds the installer, signs it for the updater and attaches the
-installer, the `.sig` file and `latest.json` to a **draft** release. Publish
-the draft to roll the version out — installed apps read
+installer, the `.sig` file and `latest.json` to a **draft** release. Write the
+release notes there ("Generate release notes" lists the merged pull requests)
+and publish the draft to roll the version out — installed apps read
 `releases/latest/download/latest.json`.
 
 Updates are signed with a key pair created by `npm run tauri signer generate`.
