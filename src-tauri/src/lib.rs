@@ -41,6 +41,10 @@ fn taskbar_is_light() -> bool {
 struct Settings {
     #[serde(default = "default_hour24")]
     hour24: bool,
+    /// Look for a newer release at startup, daily and when the popup opens.
+    /// On by default; the tray's "Check for updates…" works regardless.
+    #[serde(default = "default_true")]
+    auto_update_check: bool,
     #[serde(default = "default_quick_add_shortcut")]
     quick_add_shortcut: String,
     #[serde(default = "default_list_shortcut")]
@@ -56,6 +60,10 @@ fn default_hour24() -> bool {
     true
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_quick_add_shortcut() -> String {
     DEFAULT_QUICK_ADD_SHORTCUT.into()
 }
@@ -68,6 +76,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             hour24: default_hour24(),
+            auto_update_check: true,
             quick_add_shortcut: default_quick_add_shortcut(),
             list_shortcut: default_list_shortcut(),
             update_endpoint: None,
@@ -81,6 +90,7 @@ impl Default for Settings {
 #[serde(rename_all = "camelCase")]
 struct SettingsDto {
     hour24: bool,
+    auto_update_check: bool,
     quick_add_shortcut: String,
     list_shortcut: String,
     quick_add_pretty: String,
@@ -91,6 +101,7 @@ impl From<&Settings> for SettingsDto {
     fn from(s: &Settings) -> Self {
         Self {
             hour24: s.hour24,
+            auto_update_check: s.auto_update_check,
             quick_add_shortcut: s.quick_add_shortcut.clone(),
             list_shortcut: s.list_shortcut.clone(),
             quick_add_pretty: pretty_shortcut(&s.quick_add_shortcut),
@@ -670,8 +681,20 @@ pub fn run() {
                     settings.hour24,
                     None::<&str>,
                 )?;
-                let settings_menu =
-                    Submenu::with_items(app, "Settings", true, &[&autostart_item, &hour24_item])?;
+                let auto_update_item = CheckMenuItem::with_id(
+                    app,
+                    "auto_update",
+                    "Check for updates automatically",
+                    true,
+                    settings.auto_update_check,
+                    None::<&str>,
+                )?;
+                let settings_menu = Submenu::with_items(
+                    app,
+                    "Settings",
+                    true,
+                    &[&autostart_item, &hour24_item, &auto_update_item],
+                )?;
 
                 let add_text = format!(
                     "Add todo\t{}",
@@ -695,6 +718,7 @@ pub fn run() {
 
                 let autostart_check = autostart_item.clone();
                 let hour24_check = hour24_item.clone();
+                let auto_update_check = auto_update_item.clone();
 
                 TrayIconBuilder::with_id("main")
                     .icon(if taskbar_is_light() {
@@ -727,6 +751,17 @@ pub fn run() {
                             let snapshot = {
                                 let mut s = state.lock().unwrap();
                                 s.hour24 = hour24;
+                                s.clone()
+                            };
+                            save_settings(app, &snapshot);
+                            let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
+                        }
+                        "auto_update" => {
+                            let on = auto_update_check.is_checked().unwrap_or(true);
+                            let state = app.state::<Mutex<Settings>>();
+                            let snapshot = {
+                                let mut s = state.lock().unwrap();
+                                s.auto_update_check = on;
                                 s.clone()
                             };
                             save_settings(app, &snapshot);

@@ -41,6 +41,9 @@ Left-clicking the tray icon also opens the list; right-click shows a menu.
   release-build launch; your choice sticks afterwards)
 - **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
   stored in `settings.json` next to the database
+- **Check for updates automatically** — on by default; looks for a newer
+  release at startup, once a day and when the popup opens. Off means only
+  the tray's **Check for updates…** looks
 
 ### Quick-add syntax
 

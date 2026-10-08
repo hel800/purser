@@ -7,7 +7,7 @@
   import { formatDue, dueStatus, parseDueDate, isValidCategoryName, isToday, isThisWeek } from "./lib/parse";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
-  import { initSettings } from "./lib/settings.svelte";
+  import { initSettings, settings } from "./lib/settings.svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import {
     checkForUpdate,
@@ -238,6 +238,8 @@
    */
   async function lookForUpdate(manual = false) {
     if (updatePhase === "downloading" || updatePhase === "installing") return;
+    // automatic checks respect the setting; the tray's manual check always runs
+    if (!manual && !settings.autoUpdateCheck) return;
     lastUpdateCheck = Date.now();
     const found = await checkForUpdate();
     if (found) {
@@ -274,11 +276,11 @@
   }
 
   onMount(() => {
-    initSettings();
+    // settings first: the startup check must see autoUpdateCheck
+    initSettings().then(() => lookForUpdate());
     reload();
-    // once at startup — retried after a minute and after ten, since at login
-    // the network is often not up yet — then daily while the tray app runs
-    lookForUpdate();
+    // retried after a minute and after ten, since at login the network is
+    // often not up yet — then daily while the tray app runs
     const updateRetries = UPDATE_RETRY_DELAYS_MS.map((ms) =>
       setTimeout(() => {
         if (!updatePhase) lookForUpdate();
