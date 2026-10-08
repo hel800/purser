@@ -1,0 +1,9 @@
+Issue Type,Issue key,Issue id,Parent id,Summary,Assignee,Status,Created,Fix Version/s,Affects Version/s,Affects Version/s,Due Date
+Sub-task,DEMO-2388,135393,127454,Link all service desk tickets to the relevant product ticket,jdoe,In Progress,2025-Nov-28 15:52,,,,
+Defect,DEMO-2522,138813,,Customer audit - finding 465 - deficiency in validating software tools,jdoe,Ready for Correction,2026-Mar-12 15:23,2026,2026,,2026-Dec-17 00:00
+Task,DEMO-2668,145535,,Review: partner web page (new copy),jdoe,New,2026-Sep-04 14:28,,,,2026-Oct-05 00:00
+Task,DEMO-2531,139121,,Define complete set of deliverables for a release,jdoe,Done,2026-Mar-18 14:47,,,,
+Task,DEMO-1450,102393,,Create documented risk assessment for 2026,jdoe,Todo,2023-Jun-20 13:47,,2023,,
+Task,DEMO-2328,133679,,"integrate ""update of clinical evaluation"" into SDLC",jdoe,New,2025-Nov-05 10:19,,,,
+Epic,DEMO-2616,142513,,Risk management refurbishment 2026,jdoe,Closed,2026-Jun-19 08:10,2026,,,
+Task,DEMO-2339,133859,,"Effectiveness check for translation training, part #2",jdoe,New,2025-Nov-10 12:35,,2026,,2026-Sep-28 14:30

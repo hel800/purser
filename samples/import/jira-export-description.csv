@@ -1,0 +1,6 @@
+Issue Type,Issue key,Summary,Status,Due Date,Description
+Task,DEMO-101,Update onboarding checklist,New,2026-Oct-12 00:00,"Add the new VPN steps.
+See https://example.org/wiki/onboarding"
+Task,DEMO-102,Clean up test data,In Progress,,
+Bug,DEMO-103,Login fails with long passwords,Resolved,2026-Sep-01 00:00,Fixed in 2.3
+Task,DEMO-104,Prepare sprint review,New,02/Oct/26 3:00 PM,Demo the import feature

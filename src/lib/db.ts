@@ -69,18 +69,75 @@ export async function listCategories(): Promise<Category[]> {
   );
 }
 
-export async function addTodo(
+export interface NewTodo {
+  text: string;
+  topic: string | null;
+  dueAt: string | null;
+  notes: string | null;
+}
+
+/** Rows per INSERT statement — well below SQLite's bound-parameter limit. */
+const INSERT_CHUNK = 500;
+
+/**
+ * Inserts many todos at once. Categories are resolved first (few, mostly
+ * repeated), then the rows go in with one INSERT per chunk of `INSERT_CHUNK`:
+ * a 120-line import is a handful of round trips instead of several hundred,
+ * and each statement lands completely or not at all. The plugin's connection
+ * pool makes BEGIN/COMMIT across separate calls unreliable, so one statement
+ * per chunk is the unit of atomicity. `onChunk` reports the running total.
+ */
+export async function addTodos(todos: NewTodo[], onChunk?: (inserted: number) => void): Promise<void> {
+  if (todos.length === 0) return;
+  const d = await getDb();
+  const categoryIds = new Map<string, number | null>();
+  const categoryKey = (t: NewTodo) => (t.topic ?? "").trim().toLowerCase();
+  for (const t of todos) {
+    const key = categoryKey(t);
+    if (!categoryIds.has(key)) categoryIds.set(key, await getOrCreateCategory(d, t.topic ?? ""));
+  }
+  const createdAt = new Date().toISOString();
+  for (let i = 0; i < todos.length; i += INSERT_CHUNK) {
+    const chunk = todos.slice(i, i + INSERT_CHUNK);
+    const params: unknown[] = [];
+    const rows = chunk.map((t) => {
+      const n = params.length;
+      params.push(t.text, t.notes, categoryIds.get(categoryKey(t)) ?? null, t.dueAt, createdAt);
+      return `($${n + 1}, $${n + 2}, $${n + 3}, $${n + 4}, $${n + 5})`;
+    });
+    await d.execute(
+      `INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ${rows.join(", ")}`,
+      params
+    );
+    onChunk?.(i + chunk.length);
+  }
+}
+
+export function addTodo(
   text: string,
   topic: string | null,
   dueAt: string | null,
   notes: string | null = null
 ): Promise<void> {
+  return addTodos([{ text, topic, dueAt, notes }]);
+}
+
+/** Identity of a todo for duplicate detection: text, category (case-
+ *  insensitive like category names), due date and notes. */
+export function todoKey(
+  text: string,
+  category: string | null,
+  dueAt: string | null,
+  notes: string | null
+): string {
+  return JSON.stringify([text, category?.toLowerCase() ?? null, dueAt, notes || null]);
+}
+
+/** Keys of all stored todos, open and done. */
+export async function existingTodoKeys(): Promise<Set<string>> {
   const d = await getDb();
-  const categoryId = await getOrCreateCategory(d, topic ?? "");
-  await d.execute(
-    "INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ($1, $2, $3, $4, $5)",
-    [text, notes, categoryId, dueAt, new Date().toISOString()]
-  );
+  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM}`);
+  return new Set(rows.map((t) => todoKey(t.text, t.category_name, t.due_at, t.notes)));
 }
 
 export async function openTodos(): Promise<Todo[]> {

@@ -8,6 +8,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
   import { initSettings, settings } from "./lib/settings.svelte";
+  import { runImport, type ImportRequest } from "./lib/import";
   import { getVersion } from "@tauri-apps/api/app";
   import {
     checkForUpdate,
@@ -333,12 +334,16 @@
       notesOpenId = null;
       notesEdit = null;
     });
+    // imports run here (this webview is always loaded); the backend shows
+    // the result and then opens the list, which refreshes it
+    const unlistenImport = listen<ImportRequest>("purser://import", (e) => runImport(e.payload));
     return () => {
       clearInterval(updateTimer);
       clearTimeout(upToDateTimer);
       updateRetries.forEach(clearTimeout);
       unlistenCheck.then((f) => f());
       unlisten.then((f) => f());
+      unlistenImport.then((f) => f());
     };
   });
 
@@ -375,6 +380,12 @@
 
   function openHelp() {
     invoke("open_help");
+  }
+
+  /** Same as tray → Import todos…; the file dialog takes focus, so the
+   *  popup hides and comes back with the summary once the import is done. */
+  function openImport() {
+    invoke("open_import");
   }
 
   async function switchView(v: View) {
@@ -1110,6 +1121,7 @@
       <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
+      <button class="help-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
       <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
       <button class="wordmark-btn" onclick={openAbout} title="About Purser">
         <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />

@@ -1,0 +1,3 @@
+Resolve assigned service desk tickets //https://example.org/issues/?jql=project%20%3D%20SD%20and%20statusCategory%20!%3D%20Done #ServiceDesk
+Claude tutorial https://example.org/courses/claude-101/383392 #claude
+Bewerten der preventive actions auf Basis von "potential non-conformities". Das sind meist die mit ihnen verlinkten CAPA-Tickets
