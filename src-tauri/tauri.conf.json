@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Purser",
-  "version": "0.4.0",
+  "version": "0.4.1-beta.2",
   "identifier": "com.sschaefer.purser",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -67,8 +67,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNDOTlGM0NDOUEzRTk2QjIKUldTeWxqNmF6UE9aUEFWY2hyQjlIVStxZUNGY0RUdXphTmlwSStORm9ZL3pGMlkxSy9IcHMvQ2YK",
+      "endpoints": ["https://github.com/hel800/purser/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "windows": {
       "nsis": {
