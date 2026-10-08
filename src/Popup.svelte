@@ -7,8 +7,17 @@
   import { formatDue, dueStatus, parseDueDate, isValidCategoryName, isToday, isThisWeek } from "./lib/parse";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
-  import { initSettings } from "./lib/settings.svelte";
+  import { initSettings, settings } from "./lib/settings.svelte";
   import { runImport, type ImportRequest } from "./lib/import";
+  import { getVersion } from "@tauri-apps/api/app";
+  import {
+    checkForUpdate,
+    installUpdate,
+    UPDATE_CHECK_INTERVAL_MS,
+    UPDATE_RETRY_DELAYS_MS,
+    UPDATE_SHOW_CHECK_MIN_MS,
+    type UpdateInfo,
+  } from "./lib/updater";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
@@ -30,6 +39,23 @@
   // notes: which todo's panel is expanded, and the inline notes editor
   let notesOpenId: number | null = $state(null);
   let notesEdit: { id: number; value: string } | null = $state(null);
+
+  // self-update banner under the header: offered → downloading → installing
+  // (the installer takes over and the app exits); "uptodate" is the brief
+  // answer to a manual check that found nothing; null = hidden
+  type UpdatePhase =
+    | "offer"
+    | "downloading"
+    | "installing"
+    | "error" // install failed; U retries
+    | "uptodate" // manual check: nothing new (brief)
+    | "checkfailed" // manual check: could not ask (brief)
+    | null;
+  let update: UpdateInfo | null = $state(null);
+  let updatePhase: UpdatePhase = $state(null);
+  let updateProgress: number | null = $state(null);
+  let updateError = $state("");
+  let currentVersion = $state("");
 
   // filter bar (Open view only): category (null = all, -1 = uncategorized)
   // and a due-date stage, both cycled by keyboard or click
@@ -210,13 +236,94 @@
     selected = Math.min(selected, Math.max(0, todos.length - 1));
   }
 
+  let upToDateTimer: ReturnType<typeof setTimeout> | undefined;
+  // when the last check ran (any outcome), for the throttled check on show
+  let lastUpdateCheck = 0;
+
+  /** Shows a transient banner phase and hides it again after `ms`. */
+  function flashUpdatePhase(phase: UpdatePhase, ms: number) {
+    updatePhase = phase;
+    clearTimeout(upToDateTimer);
+    upToDateTimer = setTimeout(() => {
+      if (updatePhase === phase) updatePhase = null;
+    }, ms);
+  }
+
+  /**
+   * Looks for a newer release; a hit (re)opens the banner. Automatic checks
+   * stay silent otherwise — they run unattended and must not bother anyone
+   * with a network error. A `manual` check (tray menu) reports "up to date"
+   * or why it could not ask, for a few seconds.
+   */
+  async function lookForUpdate(manual = false) {
+    if (updatePhase === "downloading" || updatePhase === "installing") return;
+    // automatic checks respect the setting; the tray's manual check always runs
+    if (!manual && !settings.autoUpdateCheck) return;
+    lastUpdateCheck = Date.now();
+    let found: UpdateInfo | null;
+    try {
+      found = await checkForUpdate();
+    } catch (e) {
+      console.warn("update check failed:", e);
+      if (manual) {
+        updateError = e instanceof Error ? e.message : String(e);
+        flashUpdatePhase("checkfailed", 8000);
+      }
+      return;
+    }
+    if (found) {
+      update = found;
+      updatePhase = "offer";
+    } else if (manual) {
+      currentVersion = await getVersion();
+      flashUpdatePhase("uptodate", 4000);
+    }
+  }
+
+  async function startUpdate() {
+    if (!update) return;
+    updatePhase = "downloading";
+    updateProgress = null;
+    try {
+      await installUpdate((percent) => {
+        updateProgress = percent;
+        if (percent === 100) updatePhase = "installing";
+      });
+    } catch (e) {
+      updatePhase = "error";
+      updateError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /** "Later": hides the banner until the next daily check finds it again. */
+  function postponeUpdate() {
+    updatePhase = null;
+  }
+
   onMount(() => {
-    initSettings();
+    // settings first: the startup check must see autoUpdateCheck
+    initSettings().then(() => lookForUpdate());
     reload();
+    // retried after a minute and after ten, since at login the network is
+    // often not up yet — then daily while the tray app runs
+    const updateRetries = UPDATE_RETRY_DELAYS_MS.map((ms) =>
+      setTimeout(() => {
+        if (!updatePhase) lookForUpdate();
+      }, ms)
+    );
+    const updateTimer = setInterval(() => lookForUpdate(), UPDATE_CHECK_INTERVAL_MS);
+    const unlistenCheck = listen("purser://check-update", () => lookForUpdate(true));
     const unlisten = listen("purser://refresh", async () => {
       // the window is hidden, not destroyed — drop focus a click may have
       // left on a button, or Enter would re-activate it next time
       (document.activeElement as HTMLElement | null)?.blur?.();
+      // opening the popup is when the user looks at the app: refresh the
+      // update state too, at most once an hour. Deferred a moment so that a
+      // manual check arriving right behind this event (tray "Check for
+      // updates…" on a hidden popup) counts as that check instead of a second one
+      setTimeout(() => {
+        if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
+      }, 1000);
       const data = await openTodos();
       view = "open";
       todos = data;
@@ -231,6 +338,10 @@
     // the result and then opens the list, which refreshes it
     const unlistenImport = listen<ImportRequest>("purser://import", (e) => runImport(e.payload));
     return () => {
+      clearInterval(updateTimer);
+      clearTimeout(upToDateTimer);
+      updateRetries.forEach(clearTimeout);
+      unlistenCheck.then((f) => f());
       unlisten.then((f) => f());
       unlistenImport.then((f) => f());
     };
@@ -633,6 +744,14 @@
         e.preventDefault();
         await switchView(view === "open" ? "done" : "open");
         break;
+      case "u":
+        // install (or retry) the update the banner offers; Esc stays the
+        // window's, so the banner survives hiding the popup
+        if (updatePhase === "offer" || updatePhase === "error") {
+          e.preventDefault();
+          await startUpdate();
+        }
+        break;
       case "?":
         e.preventDefault();
         openHelp();
@@ -666,6 +785,41 @@
     </button>
     <span class="hint">Tab to switch</span>
   </header>
+
+  {#if updatePhase}
+    <div
+      class="update"
+      class:error={updatePhase === "error" || updatePhase === "checkfailed"}
+      role="status"
+    >
+      {#if updatePhase === "offer"}
+        <span class="update-text">Purser {update?.version} is available</span>
+        <span class="update-keys">
+          <button class="update-btn" onclick={startUpdate}><kbd>U</kbd> install</button>
+          <button class="update-x" onclick={postponeUpdate} title="Later">✕</button>
+        </span>
+      {:else if updatePhase === "downloading"}
+        <span class="update-text">
+          Downloading Purser {update?.version}…{updateProgress === null ? "" : ` ${updateProgress} %`}
+        </span>
+      {:else if updatePhase === "installing"}
+        <span class="update-text">Installing Purser {update?.version}… it restarts in a moment</span>
+      {:else if updatePhase === "uptodate"}
+        <span class="update-text">Purser {currentVersion} is up to date</span>
+      {:else if updatePhase === "checkfailed"}
+        <span class="update-text">Could not check for updates: {updateError}</span>
+        <span class="update-keys">
+          <button class="update-x" onclick={postponeUpdate} title="Dismiss">✕</button>
+        </span>
+      {:else}
+        <span class="update-text">Update to {update?.version} failed: {updateError}</span>
+        <span class="update-keys">
+          <button class="update-btn" onclick={startUpdate}><kbd>U</kbd> retry</button>
+          <button class="update-x" onclick={postponeUpdate} title="Dismiss">✕</button>
+        </span>
+      {/if}
+    </div>
+  {/if}
 
   {#if view === "open"}
     <div class="filterbar">
@@ -1067,6 +1221,60 @@
     margin-left: auto;
     font-size: 11px;
     font-weight: 400;
+  }
+  .update {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 14px;
+    font-size: 12px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+    border-bottom: 1px solid var(--border);
+  }
+  .update.error {
+    background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+  }
+  .update-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .update-keys {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .update-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .update-btn:hover {
+    color: var(--accent);
+  }
+  .update-x {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.7;
+    cursor: pointer;
+  }
+  .update-x:hover {
+    color: var(--danger);
+    opacity: 1;
   }
   .filterbar {
     display: flex;
