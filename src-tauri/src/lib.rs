@@ -261,6 +261,12 @@ fn open_help(window: WebviewWindow, app: AppHandle) {
     show_help(&app, Some(window.label().to_string()));
 }
 
+/// The popup's import button: same flow as the tray entry.
+#[tauri::command]
+fn open_import(app: AppHandle) {
+    start_import(&app);
+}
+
 #[tauri::command]
 fn close_help(app: AppHandle) {
     close_help_inner(&app);
@@ -745,6 +751,7 @@ pub fn run() {
             open_about,
             open_help,
             close_help,
+            open_import,
             confirm_import,
             import_started,
             import_finished

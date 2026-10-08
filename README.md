@@ -57,8 +57,8 @@ water plants
 
 ### Importing todos
 
-Tray menu → **Import todos…** picks a `.txt` or `.csv`
-file and adds its todos. Import only ever adds — existing todos and
+Tray menu → **Import todos…** (or the `⇧` button in the popup's footer)
+picks a `.txt` or `.csv` file and adds its todos. Import only ever adds — existing todos and
 categories are never changed. Examples live in [`samples/import`](samples/import).
 
 - **`.txt`** — one todo per line in quick-add syntax

@@ -271,6 +271,12 @@
     invoke("open_help");
   }
 
+  /** Same as tray → Import todos…; the file dialog takes focus, so the
+   *  popup hides and comes back with the summary once the import is done. */
+  function openImport() {
+    invoke("open_import");
+  }
+
   async function switchView(v: View) {
     if (view === v) return;
     // fetch first, then commit view + data together so the old list never
@@ -961,6 +967,7 @@
       <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
+      <button class="help-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
       <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
       <button class="wordmark-btn" onclick={openAbout} title="About Purser">
         <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
