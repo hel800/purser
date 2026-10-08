@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { addTodo, existingTodoKeys, todoKey } from "./db";
+import { addTodos, existingTodoKeys, todoKey } from "./db";
 import { TAG_CHARS, isValidCategoryName, parseDueDate, parseTodo, splitNote, type ParsedTodo } from "./parse";
 
 /** Payload of the backend's `purser://import` event. */
@@ -283,10 +283,9 @@ export async function runImport({ fileName, csv, content }: ImportRequest): Prom
       await finish(true, null);
       return;
     }
-    for (const todo of fresh) {
-      await addTodo(todo.text, todo.topic, todo.dueAt, todo.notes);
-      imported++;
-    }
+    // batched: a few statements instead of one per todo, each chunk atomic;
+    // `imported` tracks the chunks that landed in case a later one fails
+    await addTodos(fresh, (inserted) => (imported = inserted));
     await finish(false, null);
   } catch (e) {
     await finish(false, e instanceof Error ? e.message : String(e));
