@@ -334,7 +334,14 @@ fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
 /// which treats them as "nothing found".
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let update = updater(&app)?.check().await.map_err(|e| e.to_string())?;
+    let update = updater(&app)?.check().await.map_err(|e| e.to_string());
+    // visible in `tauri dev` output; the webview swallows failures on purpose
+    match &update {
+        Ok(Some(u)) => eprintln!("update check: {} available", u.version),
+        Ok(None) => eprintln!("update check: up to date"),
+        Err(e) => eprintln!("update check failed: {e}"),
+    }
+    let update = update?;
     let info = update.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
         body: u.body.clone(),

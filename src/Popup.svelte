@@ -9,7 +9,14 @@
   import { slide } from "svelte/transition";
   import { initSettings } from "./lib/settings.svelte";
   import { getVersion } from "@tauri-apps/api/app";
-  import { checkForUpdate, installUpdate, UPDATE_CHECK_INTERVAL_MS, type UpdateInfo } from "./lib/updater";
+  import {
+    checkForUpdate,
+    installUpdate,
+    UPDATE_CHECK_INTERVAL_MS,
+    UPDATE_RETRY_DELAYS_MS,
+    UPDATE_SHOW_CHECK_MIN_MS,
+    type UpdateInfo,
+  } from "./lib/updater";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
@@ -222,6 +229,8 @@
   }
 
   let upToDateTimer: ReturnType<typeof setTimeout> | undefined;
+  // when the last check ran (any outcome), for the throttled check on show
+  let lastUpdateCheck = 0;
 
   /**
    * Looks for a newer release; a hit (re)opens the banner. A `manual` check
@@ -229,6 +238,7 @@
    */
   async function lookForUpdate(manual = false) {
     if (updatePhase === "downloading" || updatePhase === "installing") return;
+    lastUpdateCheck = Date.now();
     const found = await checkForUpdate();
     if (found) {
       update = found;
@@ -266,14 +276,23 @@
   onMount(() => {
     initSettings();
     reload();
-    // once at startup, then daily while the tray app keeps running
+    // once at startup — retried after a minute and after ten, since at login
+    // the network is often not up yet — then daily while the tray app runs
     lookForUpdate();
+    const updateRetries = UPDATE_RETRY_DELAYS_MS.map((ms) =>
+      setTimeout(() => {
+        if (!updatePhase) lookForUpdate();
+      }, ms)
+    );
     const updateTimer = setInterval(() => lookForUpdate(), UPDATE_CHECK_INTERVAL_MS);
     const unlistenCheck = listen("purser://check-update", () => lookForUpdate(true));
     const unlisten = listen("purser://refresh", async () => {
       // the window is hidden, not destroyed — drop focus a click may have
       // left on a button, or Enter would re-activate it next time
       (document.activeElement as HTMLElement | null)?.blur?.();
+      // opening the popup is when the user looks at the app: refresh the
+      // update state too, at most once an hour
+      if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
       const data = await openTodos();
       view = "open";
       todos = data;
@@ -287,6 +306,7 @@
     return () => {
       clearInterval(updateTimer);
       clearTimeout(upToDateTimer);
+      updateRetries.forEach(clearTimeout);
       unlistenCheck.then((f) => f());
       unlisten.then((f) => f());
     };

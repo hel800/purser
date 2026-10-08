@@ -11,6 +11,12 @@ export interface UpdateInfo {
 /** Re-check interval while the tray app keeps running (once a day). */
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/** Retries after a startup check that found nothing (network not up yet at login). */
+export const UPDATE_RETRY_DELAYS_MS = [60 * 1000, 10 * 60 * 1000];
+
+/** Minimum age of the last check before opening the popup triggers another. */
+export const UPDATE_SHOW_CHECK_MIN_MS = 60 * 60 * 1000;
+
 /**
  * Asks the backend whether a newer version exists. Any failure — offline, no
  * release with a manifest yet, a bad signature — is treated as "no update":
