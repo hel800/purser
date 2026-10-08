@@ -42,7 +42,14 @@
   // self-update banner under the header: offered → downloading → installing
   // (the installer takes over and the app exits); "uptodate" is the brief
   // answer to a manual check that found nothing; null = hidden
-  type UpdatePhase = "offer" | "downloading" | "installing" | "error" | "uptodate" | null;
+  type UpdatePhase =
+    | "offer"
+    | "downloading"
+    | "installing"
+    | "error" // install failed; U retries
+    | "uptodate" // manual check: nothing new (brief)
+    | "checkfailed" // manual check: could not ask (brief)
+    | null;
   let update: UpdateInfo | null = $state(null);
   let updatePhase: UpdatePhase = $state(null);
   let updateProgress: number | null = $state(null);
@@ -232,26 +239,43 @@
   // when the last check ran (any outcome), for the throttled check on show
   let lastUpdateCheck = 0;
 
+  /** Shows a transient banner phase and hides it again after `ms`. */
+  function flashUpdatePhase(phase: UpdatePhase, ms: number) {
+    updatePhase = phase;
+    clearTimeout(upToDateTimer);
+    upToDateTimer = setTimeout(() => {
+      if (updatePhase === phase) updatePhase = null;
+    }, ms);
+  }
+
   /**
-   * Looks for a newer release; a hit (re)opens the banner. A `manual` check
-   * (tray menu) also says so for a few seconds when there is nothing new.
+   * Looks for a newer release; a hit (re)opens the banner. Automatic checks
+   * stay silent otherwise — they run unattended and must not bother anyone
+   * with a network error. A `manual` check (tray menu) reports "up to date"
+   * or why it could not ask, for a few seconds.
    */
   async function lookForUpdate(manual = false) {
     if (updatePhase === "downloading" || updatePhase === "installing") return;
     // automatic checks respect the setting; the tray's manual check always runs
     if (!manual && !settings.autoUpdateCheck) return;
     lastUpdateCheck = Date.now();
-    const found = await checkForUpdate();
+    let found: UpdateInfo | null;
+    try {
+      found = await checkForUpdate();
+    } catch (e) {
+      console.warn("update check failed:", e);
+      if (manual) {
+        updateError = e instanceof Error ? e.message : String(e);
+        flashUpdatePhase("checkfailed", 8000);
+      }
+      return;
+    }
     if (found) {
       update = found;
       updatePhase = "offer";
     } else if (manual) {
       currentVersion = await getVersion();
-      updatePhase = "uptodate";
-      clearTimeout(upToDateTimer);
-      upToDateTimer = setTimeout(() => {
-        if (updatePhase === "uptodate") updatePhase = null;
-      }, 4000);
+      flashUpdatePhase("uptodate", 4000);
     }
   }
 
@@ -293,8 +317,12 @@
       // left on a button, or Enter would re-activate it next time
       (document.activeElement as HTMLElement | null)?.blur?.();
       // opening the popup is when the user looks at the app: refresh the
-      // update state too, at most once an hour
-      if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
+      // update state too, at most once an hour. Deferred a moment so that a
+      // manual check arriving right behind this event (tray "Check for
+      // updates…" on a hidden popup) counts as that check instead of a second one
+      setTimeout(() => {
+        if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
+      }, 1000);
       const data = await openTodos();
       view = "open";
       todos = data;
@@ -748,7 +776,11 @@
   </header>
 
   {#if updatePhase}
-    <div class="update" class:error={updatePhase === "error"} role="status">
+    <div
+      class="update"
+      class:error={updatePhase === "error" || updatePhase === "checkfailed"}
+      role="status"
+    >
       {#if updatePhase === "offer"}
         <span class="update-text">Purser {update?.version} is available</span>
         <span class="update-keys">
@@ -763,6 +795,11 @@
         <span class="update-text">Installing Purser {update?.version}… it restarts in a moment</span>
       {:else if updatePhase === "uptodate"}
         <span class="update-text">Purser {currentVersion} is up to date</span>
+      {:else if updatePhase === "checkfailed"}
+        <span class="update-text">Could not check for updates: {updateError}</span>
+        <span class="update-keys">
+          <button class="update-x" onclick={postponeUpdate} title="Dismiss">✕</button>
+        </span>
       {:else}
         <span class="update-text">Update to {update?.version} failed: {updateError}</span>
         <span class="update-keys">

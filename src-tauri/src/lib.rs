@@ -39,7 +39,7 @@ fn taskbar_is_light() -> bool {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
-    #[serde(default = "default_hour24")]
+    #[serde(default = "default_true")]
     hour24: bool,
     /// Look for a newer release at startup, daily and when the popup opens.
     /// On by default; the tray's "Check for updates…" works regardless.
@@ -54,10 +54,6 @@ struct Settings {
     /// pre-releases, e.g. `https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     update_endpoint: Option<String>,
-}
-
-fn default_hour24() -> bool {
-    true
 }
 
 fn default_true() -> bool {
@@ -75,8 +71,8 @@ fn default_list_shortcut() -> String {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            hour24: default_hour24(),
-            auto_update_check: true,
+            hour24: default_true(),
+            auto_update_check: default_true(),
             quick_add_shortcut: default_quick_add_shortcut(),
             list_shortcut: default_list_shortcut(),
             update_endpoint: None,
@@ -295,29 +291,45 @@ fn position_popup(win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
+/// Brings the popup up above the clock and tells it to reload (it is hidden,
+/// never destroyed, so its state is still there).
+fn show_popup(win: &WebviewWindow) {
+    position_popup(win);
+    let _ = win.show();
+    let _ = win.set_focus();
+    let _ = win.emit("purser://refresh", ());
+}
+
 fn toggle_popup(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();
         } else {
-            position_popup(&win);
-            let _ = win.show();
-            let _ = win.set_focus();
-            let _ = win.emit("purser://refresh", ());
+            show_popup(&win);
         }
     }
 }
 
-/// The update found by `check_update`, kept until `install_update` is asked
-/// for it (the webview only gets the `UpdateInfo` summary).
+/// Applies `change` to the settings, saves them and tells the webviews.
+fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) {
+    let snapshot = {
+        let state = app.state::<Mutex<Settings>>();
+        let mut s = state.lock().unwrap();
+        change(&mut s);
+        s.clone()
+    };
+    save_settings(app, &snapshot);
+    let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
+}
+
+/// The update found by `check_update`, kept until `install_update` has
+/// installed it (the webview only gets the `UpdateInfo` summary).
 struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateInfo {
     version: String,
-    body: Option<String>,
-    date: Option<String>,
 }
 
 /// The updater from the plugin config, with the endpoint swapped for the
@@ -342,11 +354,11 @@ fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
 
 /// Asks the endpoint whether a newer version exists; remembers it for
 /// `install_update`. Errors (offline, no manifest yet) go to the webview,
-/// which treats them as "nothing found".
+/// which ignores them for automatic checks and shows them for manual ones.
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let update = updater(&app)?.check().await.map_err(|e| e.to_string());
-    // visible in `tauri dev` output; the webview swallows failures on purpose
+    // visible in `tauri dev` output
     match &update {
         Ok(Some(u)) => eprintln!("update check: {} available", u.version),
         Ok(None) => eprintln!("update check: up to date"),
@@ -355,17 +367,17 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let update = update?;
     let info = update.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
-        body: u.body.clone(),
-        date: u.date.map(|d| d.to_string()),
     });
     *app.state::<PendingUpdate>().0.lock().unwrap() = update;
     Ok(info)
 }
 
 /// Downloads and installs the pending update, reporting the download as
-/// `purser://update-progress` percentages (null while the size is unknown).
-/// On Windows the installer takes over and the plugin exits the app; on
-/// other platforms the app restarts into the new version.
+/// `purser://update-progress` percentages (null while the size is unknown),
+/// one event per changed value. The pending update stays until the install
+/// went through, so a failed download can be retried. On Windows the
+/// installer takes over and the plugin exits the app; on other platforms the
+/// app restarts into the new version.
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
     let update = app
@@ -373,21 +385,26 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
         .0
         .lock()
         .unwrap()
-        .take()
+        .clone()
         .ok_or("no update to install")?;
     let progress = app.clone();
     let mut received: u64 = 0;
+    let mut last: Option<Option<u8>> = None;
     update
         .download_and_install(
             move |chunk, total| {
                 received += chunk as u64;
                 let percent = total.map(|t| (received * 100 / t.max(1)).min(100) as u8);
-                let _ = progress.emit_to("popup", "purser://update-progress", percent);
+                if last != Some(percent) {
+                    last = Some(percent);
+                    let _ = progress.emit_to("popup", "purser://update-progress", percent);
+                }
             },
             || {},
         )
         .await
         .map_err(|e| e.to_string())?;
+    *app.state::<PendingUpdate>().0.lock().unwrap() = None;
     let _ = app.emit_to("popup", "purser://update-progress", Some(100u8));
     app.restart();
 }
@@ -397,10 +414,7 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
 fn check_for_updates(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("popup") {
         if !win.is_visible().unwrap_or(false) {
-            position_popup(&win);
-            let _ = win.show();
-            let _ = win.set_focus();
-            let _ = win.emit("purser://refresh", ());
+            show_popup(&win);
         }
         let _ = win.emit("purser://check-update", ());
     }
@@ -746,26 +760,12 @@ pub fn run() {
                             }
                         }
                         "hour24" => {
-                            let hour24 = hour24_check.is_checked().unwrap_or(true);
-                            let state = app.state::<Mutex<Settings>>();
-                            let snapshot = {
-                                let mut s = state.lock().unwrap();
-                                s.hour24 = hour24;
-                                s.clone()
-                            };
-                            save_settings(app, &snapshot);
-                            let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
+                            let on = hour24_check.is_checked().unwrap_or(true);
+                            update_settings(app, |s| s.hour24 = on);
                         }
                         "auto_update" => {
                             let on = auto_update_check.is_checked().unwrap_or(true);
-                            let state = app.state::<Mutex<Settings>>();
-                            let snapshot = {
-                                let mut s = state.lock().unwrap();
-                                s.auto_update_check = on;
-                                s.clone()
-                            };
-                            save_settings(app, &snapshot);
-                            let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
+                            update_settings(app, |s| s.auto_update_check = on);
                         }
                         "quit" => app.exit(0),
                         "help" => show_help(app, None),

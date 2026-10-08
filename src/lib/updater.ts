@@ -4,8 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 /** What the backend's `check_update` found (see `UpdateInfo` in lib.rs). */
 export interface UpdateInfo {
   version: string;
-  body: string | null;
-  date: string | null;
 }
 
 /** Re-check interval while the tray app keeps running (once a day). */
@@ -18,18 +16,12 @@ export const UPDATE_RETRY_DELAYS_MS = [60 * 1000, 10 * 60 * 1000];
 export const UPDATE_SHOW_CHECK_MIN_MS = 60 * 60 * 1000;
 
 /**
- * Asks the backend whether a newer version exists. Any failure — offline, no
- * release with a manifest yet, a bad signature — is treated as "no update":
- * the check runs unattended at startup and must never bother the user with
- * a network error.
+ * Asks the backend whether a newer version exists: the update, null when up
+ * to date. Throws when the check itself failed (offline, no manifest yet, a
+ * bad signature) — the caller decides whether that is worth showing.
  */
-export async function checkForUpdate(): Promise<UpdateInfo | null> {
-  try {
-    return await invoke<UpdateInfo | null>("check_update");
-  } catch (e) {
-    console.warn("update check failed:", e);
-    return null;
-  }
+export function checkForUpdate(): Promise<UpdateInfo | null> {
+  return invoke<UpdateInfo | null>("check_update");
 }
 
 /**
