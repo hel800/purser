@@ -609,11 +609,15 @@
           catMenuMove(e.key === "j" ? 1 : -1);
         }
         break;
-      case "Enter":
+      case "Enter": {
         e.preventDefault();
-        // a typed valid name always wins over a row the mouse merely hovers
-        await catMenuChoose(catMenuCreateValid ? 0 : catMenuActive);
+        // a typed valid name wins over a row the mouse merely hovers, but not
+        // over one the user moved to on purpose: arrow keys and j/k give the
+        // row focus (see catMenuMove), hovering leaves the input focused
+        const typing = document.activeElement === catMenuInput && catMenuCreateValid;
+        await catMenuChoose(typing ? 0 : catMenuActive);
         break;
+      }
       case "Tab":
         // accept the grayed-out completion instead of tabbing away
         e.preventDefault();
