@@ -14,6 +14,7 @@ fictional; links point to `example.org`.
 | `jira-export.csv` | Jira CSV export layout (duplicate `Affects Version/s` column, `""` quoting, `2026-Dec-17 00:00` dates); Done/Closed issues are skipped, no notes |
 | `jira-export-description.csv` | Jira export with a `Description` column (becomes the note) and the `02/Oct/26 3:00 PM` date format |
 | `many-todos.txt` | 120 todos — triggers the confirmation for more than 50 |
+| `only-urls.txt` | Every line is only a URL: nothing is imported, the summary reports 2 skipped entries (not an error — same as a Jira export with only Done issues) |
 
 ## `invalid/` — each file must be rejected, nothing gets imported
 
@@ -22,7 +23,6 @@ fictional; links point to `example.org`.
 | `empty.txt` | the file is empty |
 | `binary.csv` | not a text file (contains NUL bytes) |
 | `broken-quote.csv` | invalid CSV — a quote is never closed |
-| `only-urls.txt` | no todos found (every line is only a URL) |
 
 Importing a valid file a second time (e.g. `new-todos.txt`) demonstrates
 duplicate detection: the summary reports the todos that already exist

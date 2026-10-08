@@ -239,7 +239,9 @@ function parseCsv(content: string): ImportResult {
 /** Parses the whole file up front, so a broken file imports nothing. */
 export function parseImport(content: string, csv: boolean): ImportResult {
   const result = csv ? parseCsv(content) : parseTxt(content);
-  if (result.items.length === 0) {
+  // nothing recognizable at all is an error; entries that were read but
+  // skipped (done issues, bad due dates, URL-only lines) are reported as such
+  if (result.items.length === 0 && result.skipped === 0) {
     throw new ImportError("no todos found in the file.");
   }
   return result;
