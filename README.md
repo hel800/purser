@@ -41,6 +41,9 @@ Left-clicking the tray icon also opens the list; right-click shows a menu.
   release-build launch; your choice sticks afterwards)
 - **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
   stored in `settings.json` next to the database
+- **Date input** — the language due dates are typed in: **Automatic**
+  (default, German on a German Windows, English otherwise), **English** or
+  **Deutsch**. Only one language is active at a time
 - **Check for updates automatically** — on by default; looks for a newer
   release at startup, once a day and when the popup opens. Off means only
   the tray's **Check for updates…** looks
@@ -55,7 +58,18 @@ prepare demo tomorrow 9am #work // agenda: budget, https://example.com/prep
 water plants
 ```
 
-- Dates/times are parsed with [chrono-node](https://github.com/wanasit/chrono) (`friday 5pm`, `tomorrow`, `in 2 weeks`, `Aug 20`, …)
+- Dates/times are parsed with [chrono-node](https://github.com/wanasit/chrono)
+  in the **Date input** language (tray → Settings):
+  - English: `friday 5pm`, `tomorrow`, `in 2 weeks`, `Aug 20`,
+    `coming monday`, `early/mid/end of October`, …
+  - German: `Fr 15 Uhr`, `Freitag 1500`, `morgen`, `übermorgen`,
+    `nächsten`/`kommenden Montag`, `in 2 Monaten`, `Anfang/Mitte/Ende Oktober`,
+    `KW 44` (its Monday), `23.12.2026`, `23.12.` (the next 23 Dec), …
+    Weekday abbreviations (`Mo` … `So`) count only when capitalised and not
+    the first word of the line, so `so bald wie möglich` and
+    `So schnell es geht` stay text; with a time (`Fr 15 Uhr Zahnarzt`) they
+    always count
+  - Both: compact dates like `20261223`
 - `#word` assigns a category (created on the fly); existing category names
   autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
 - Everything after a `//` (preceded by a space) becomes the todo's note —
