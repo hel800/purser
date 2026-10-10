@@ -125,6 +125,16 @@ struct SheetOwner(Mutex<Option<String>>);
 /// of silently disappearing.
 struct Capturing(AtomicBool);
 
+/// True while the full-size view's print dialog is open. The dialog takes
+/// focus from the view, which must not hide (as it would on any other blur)
+/// or the dialog disappears with it.
+struct Printing(AtomicBool);
+
+/// The view and filters handed from the popup to the full-size view. Kept
+/// here for the view to pull, since an event sent before its webview has
+/// mounted (L right after startup) would be lost.
+struct ListState(Mutex<serde_json::Value>);
+
 /// True from opening the import file dialog until the popup webview reports
 /// the import finished, so a second menu click can't start a parallel one.
 struct Importing(AtomicBool);
@@ -298,16 +308,19 @@ fn toggle_quick_add(app: &AppHandle) {
     }
 }
 
-/// Bottom-right of the primary monitor's work area — directly above the
-/// clock, clear of the taskbar and never spilling onto another monitor.
-/// (The tray with the clock lives on the primary monitor on Windows.)
-fn position_popup(win: &WebviewWindow) {
-    let monitor = win
-        .primary_monitor()
+/// The monitor the popup lives on: the primary one, since the tray with the
+/// clock is on the primary monitor on Windows. The full list opens there too.
+fn popup_monitor(win: &WebviewWindow) -> Option<tauri::Monitor> {
+    win.primary_monitor()
         .ok()
         .flatten()
-        .or_else(|| win.current_monitor().ok().flatten());
-    let (Some(monitor), Ok(size)) = (monitor, win.outer_size()) else {
+        .or_else(|| win.current_monitor().ok().flatten())
+}
+
+/// Bottom-right of the popup monitor's work area — directly above the
+/// clock, clear of the taskbar and never spilling onto another monitor.
+fn position_popup(win: &WebviewWindow) {
+    let (Some(monitor), Ok(size)) = (popup_monitor(win), win.outer_size()) else {
         return;
     };
     let wa = monitor.work_area();
@@ -334,6 +347,78 @@ fn toggle_popup(app: &AppHandle) {
             show_popup(&win);
         }
     }
+}
+
+/// Swaps the small popup for the full-size view: the same list, view-only,
+/// covering the popup monitor's work area. `state` (view and filters, or
+/// null for a fresh Open view) is handed over so it feels like one window.
+fn show_list(app: &AppHandle, state: serde_json::Value) {
+    let Some(win) = app.get_webview_window("list") else {
+        return;
+    };
+    end_print_inner(app);
+    if let Some(monitor) = popup_monitor(&win) {
+        let area = monitor.work_area();
+        let _ = win.set_position(area.position);
+        let _ = win.set_size(area.size);
+    }
+    *app.state::<ListState>().0.lock().unwrap() = state;
+    // tells a mounted view to pull the new state (see `list_state`)
+    let _ = win.emit("purser://list-state", ());
+    let _ = win.show();
+    let _ = win.set_focus();
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.hide();
+    }
+}
+
+/// Back from the full-size view to the small popup, keeping view and filters.
+fn hide_list(app: &AppHandle, state: serde_json::Value) {
+    end_print_inner(app);
+    if let Some(win) = app.get_webview_window("list") {
+        let _ = win.hide();
+    }
+    if let Some(popup) = app.get_webview_window("popup") {
+        position_popup(&popup);
+        let _ = popup.show();
+        let _ = popup.set_focus();
+        let _ = popup.emit("purser://refresh", state);
+    }
+}
+
+#[tauri::command]
+fn open_list(app: AppHandle, state: serde_json::Value) {
+    show_list(&app, state);
+}
+
+/// The state last handed to the full-size view, or null for a fresh Open view.
+#[tauri::command]
+fn list_state(state: tauri::State<'_, ListState>) -> serde_json::Value {
+    state.0.lock().unwrap().clone()
+}
+
+/// Called right before `window.print()`; cleared when the view regains focus
+/// after the dialog closes (see `on_window_event`).
+#[tauri::command]
+fn begin_print(app: AppHandle) {
+    app.state::<Printing>().0.store(true, Ordering::Relaxed);
+}
+
+/// Called once `window.print()` returns. If no dialog ever took focus (print
+/// failed, no printer…), the focus-gain that normally clears the flag never
+/// comes, and the next real blur would leave the view on top of everything.
+#[tauri::command]
+fn end_print(app: AppHandle) {
+    end_print_inner(&app);
+}
+
+fn end_print_inner(app: &AppHandle) {
+    app.state::<Printing>().0.store(false, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn close_list(app: AppHandle, state: serde_json::Value) {
+    hide_list(&app, state);
 }
 
 /// Payload of `purser://import`: the decoded file content, parsed and
@@ -878,6 +963,11 @@ pub fn run() {
             end_capture,
             open_about,
             open_help,
+            open_list,
+            list_state,
+            close_list,
+            begin_print,
+            end_print,
             close_help,
             open_import,
             confirm_import,
@@ -897,6 +987,8 @@ pub fn run() {
             app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
+            app.manage(Printing(AtomicBool::new(false)));
+            app.manage(ListState(Mutex::new(serde_json::Value::Null)));
             app.manage(Importing(AtomicBool::new(false)));
             app.manage(ImportAck {
                 generation: AtomicU32::new(0),
@@ -1010,6 +1102,7 @@ pub fn run() {
                     &[
                         &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
                         &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
+                        &MenuItem::with_id(app, "fulllist", "Show full list", true, None::<&str>)?,
                         &MenuItem::with_id(app, "import", "Import todos…", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
@@ -1036,6 +1129,7 @@ pub fn run() {
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "add" => toggle_quick_add(app),
                         "list" => toggle_popup(app),
+                        "fulllist" => show_list(app, serde_json::Value::Null),
                         "import" => start_import(app),
                         "autostart" => {
                             // the click already flipped the checkbox; apply it
@@ -1095,9 +1189,15 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::Focused(true) if window.label() == "list" => {
+                // back from the print dialog (or any other return): blur hides again
+                window.app_handle().state::<Printing>().0.store(false, Ordering::Relaxed);
+            }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "help" {
+                if window.label() == "list" && app.state::<Printing>().0.load(Ordering::Relaxed) {
+                    // the print dialog took focus — keep the view open under it
+                } else if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
                         // recording lost focus — most likely the combo is
                         // owned by another app and just triggered it. Keep

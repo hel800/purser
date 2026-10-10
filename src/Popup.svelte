@@ -4,7 +4,18 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, isValidCategoryName, isToday, isThisWeek } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, isValidCategoryName, linkify } from "./lib/parse";
+  import FilterBar from "./lib/FilterBar.svelte";
+  import {
+    filterTodos,
+    groupByCategory,
+    nextCategory,
+    nextDue,
+    type CategoryFilter,
+    type DueFilter,
+    type Group,
+    type ViewState,
+  } from "./lib/filters";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { slide } from "svelte/transition";
   import { initSettings, settings } from "./lib/settings.svelte";
@@ -19,6 +30,7 @@
     type UpdateInfo,
   } from "./lib/updater";
   import Logo from "./lib/Logo.svelte";
+  import Toast from "./lib/Toast.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
   type View = "open" | "done";
@@ -59,92 +71,26 @@
 
   // filter bar (Open view only): category (null = all, -1 = uncategorized)
   // and a due-date stage, both cycled by keyboard or click
-  type DueFilter = "all" | "today" | "week" | "soon" | "overdue" | "nodate";
-  let catFilter: number | null = $state(null);
+  let catFilter: CategoryFilter = $state(null);
   let dueFilter: DueFilter = $state("all");
-
-  const DUE_CYCLE: DueFilter[] = ["all", "today", "week", "soon", "overdue", "nodate"];
-  const DUE_LABELS: Record<DueFilter, string> = {
-    all: "Any due date",
-    today: "Today",
-    week: "This week",
-    soon: "Soon or overdue",
-    overdue: "Overdue",
-    nodate: "No date",
-  };
-
-  // categories present in the open list, in list order, for the T cycle
-  let catCycle = $derived.by(() => {
-    const ids: (number | null)[] = [null];
-    for (const t of todos) {
-      const key = t.category_id ?? -1;
-      if (!ids.includes(key)) ids.push(key);
-    }
-    return ids;
-  });
-
-  function catInfoFor(c: number | null): { label: string; color: string | null } {
-    if (c === null) return { label: "All categories", color: null };
-    if (c === -1) return { label: "No category", color: null };
-    const t = todos.find((t) => t.category_id === c);
-    return { label: t?.category_name ?? "?", color: t?.category_color ?? null };
-  }
-
-  let catFilterInfo = $derived(catInfoFor(catFilter));
 
   // clicking a pill opens a dropdown; the T/F keys cycle directly
   let filterMenu: "cat" | "due" | null = $state(null);
 
   function cycleCat() {
-    const i = catCycle.indexOf(catFilter);
-    catFilter = catCycle[(i + 1) % catCycle.length] ?? null;
+    catFilter = nextCategory(todos, catFilter);
     selected = 0;
     filterMenu = null;
   }
 
   function cycleDue() {
-    const i = DUE_CYCLE.indexOf(dueFilter);
-    dueFilter = DUE_CYCLE[(i + 1) % DUE_CYCLE.length];
+    dueFilter = nextDue(dueFilter);
     selected = 0;
     filterMenu = null;
-  }
-
-  function pickCat(c: number | null) {
-    catFilter = c;
-    selected = 0;
-    filterMenu = null;
-  }
-
-  function pickDue(d: DueFilter) {
-    dueFilter = d;
-    selected = 0;
-    filterMenu = null;
-  }
-
-  function matchesDue(t: Todo): boolean {
-    switch (dueFilter) {
-      case "all":
-        return true;
-      case "today":
-        return t.due_at !== null && isToday(t.due_at);
-      case "week":
-        return t.due_at !== null && isThisWeek(t.due_at);
-      case "soon":
-        return dueStatus(t.due_at) !== null;
-      case "overdue":
-        return dueStatus(t.due_at) === "overdue";
-      case "nodate":
-        return t.due_at === null;
-    }
   }
 
   // filters narrow the Open view only; Done always shows everything
-  let visibleTodos = $derived.by(() => {
-    if (view !== "open") return todos;
-    return todos.filter(
-      (t) => (catFilter === null || (t.category_id ?? -1) === catFilter) && matchesDue(t)
-    );
-  });
+  let visibleTodos = $derived(view === "open" ? filterTodos(todos, catFilter, dueFilter) : todos);
 
   // mirror the input's horizontal scroll so the ghost overlay stays glued to
   // the caret when a long name scrolls
@@ -206,29 +152,9 @@
 
   const win = getCurrentWindow();
 
-  interface Group {
-    id: number | null;
-    topic: string;
-    color: string | null;
-    todos: Todo[];
-  }
-
   let groups: Group[] = $derived.by(() => {
     if (view === "done") return todos.length ? [{ id: null, topic: "Done", color: null, todos }] : [];
-    const map = new Map<number, Group>();
-    for (const t of visibleTodos) {
-      const key = t.category_id ?? -1;
-      if (!map.has(key)) {
-        map.set(key, {
-          id: t.category_id,
-          topic: t.category_name || "No topic",
-          color: t.category_color,
-          todos: [],
-        });
-      }
-      map.get(key)!.todos.push(t);
-    }
-    return [...map.values()];
+    return groupByCategory(visibleTodos);
   });
 
   async function reload() {
@@ -313,7 +239,8 @@
     );
     const updateTimer = setInterval(() => lookForUpdate(), UPDATE_CHECK_INTERVAL_MS);
     const unlistenCheck = listen("purser://check-update", () => lookForUpdate(true));
-    const unlisten = listen("purser://refresh", async () => {
+    // payload: the state the full-size view hands back, or null for a fresh open
+    const unlisten = listen<ViewState | null>("purser://refresh", async (e) => {
       // the window is hidden, not destroyed — drop focus a click may have
       // left on a button, or Enter would re-activate it next time
       (document.activeElement as HTMLElement | null)?.blur?.();
@@ -324,9 +251,16 @@
       setTimeout(() => {
         if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
       }, 1000);
-      const data = await openTodos();
-      view = "open";
+      const state = e.payload;
+      const nextView = state?.view ?? "open";
+      const data = nextView === "open" ? await openTodos() : await doneTodos();
+      view = nextView;
       todos = data;
+      if (state) {
+        catFilter = state.catFilter;
+        dueFilter = state.dueFilter;
+      }
+      filterMenu = null;
       selected = 0;
       editing = null;
       catEdit = null;
@@ -452,14 +386,6 @@
 
   function focusInput(node: HTMLInputElement | HTMLTextAreaElement) {
     node.focus();
-  }
-
-  /** Split note text into plain segments and clickable https?:// links. */
-  function linkify(text: string): { link: boolean; value: string }[] {
-    return text
-      .split(/(https?:\/\/\S+)/g)
-      .filter((part) => part !== "")
-      .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
   }
 
   /** Indicator click: toggle existing notes, or start writing the first one. */
@@ -645,6 +571,19 @@
     return { update };
   }
 
+  let printToast = $state<Toast>();
+
+  // the small popup would print only its visible rows: point to the
+  // full-size view instead. Capture phase, because the edit inputs stop
+  // their keys from bubbling to the window.
+  function blockPrint(e: KeyboardEvent) {
+    if (e.ctrlKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      e.stopPropagation();
+      printToast?.flash();
+    }
+  }
+
   async function onKeydown(e: KeyboardEvent) {
     if (editing || notesEdit) return;
     if (filterMenu) {
@@ -748,6 +687,11 @@
         e.preventDefault();
         await switchView(view === "open" ? "done" : "open");
         break;
+      case "l":
+        // swap to the full-size view, keeping view and filters
+        e.preventDefault();
+        invoke("open_list", { state: { view, catFilter, dueFilter } satisfies ViewState });
+        break;
       case "u":
         // install (or retry) the update the banner offers; Esc stays the
         // window's, so the banner survives hiding the popup
@@ -776,7 +720,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onkeydowncapture={blockPrint} />
 
 <main>
   <header>
@@ -826,91 +770,7 @@
   {/if}
 
   {#if view === "open"}
-    <div class="filterbar">
-      <span class="filterwrap">
-        <button
-          class="filter"
-          class:active={catFilter !== null}
-          title="Category filter (T cycles)"
-          onclick={() => (filterMenu = filterMenu === "cat" ? null : "cat")}
-        >
-          {#if catFilterInfo.color}
-            <span class="dot" style:background={catFilterInfo.color}></span>
-          {/if}
-          {catFilterInfo.label}
-          {#if catFilter !== null}
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <span
-              class="pill-x"
-              role="button"
-              tabindex="-1"
-              title="Show all categories"
-              onclick={(e) => {
-                e.stopPropagation();
-                pickCat(null);
-              }}>✕</span
-            >
-          {:else}
-            <span class="caret">▾</span>
-          {/if}
-        </button>
-        {#if filterMenu === "cat"}
-          <div class="fmenu">
-            {#each catCycle as c (c ?? "all")}
-              {@const info = catInfoFor(c)}
-              <button class="fmenu-item" class:sel={catFilter === c} onclick={() => pickCat(c)}>
-                {#if info.color}
-                  <span class="dot" style:background={info.color}></span>
-                {/if}
-                {info.label}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </span>
-      <span class="filterwrap">
-        <button
-          class="filter"
-          class:active={dueFilter !== "all"}
-          title="Due-date filter (F cycles)"
-          onclick={() => (filterMenu = filterMenu === "due" ? null : "due")}
-        >
-          {DUE_LABELS[dueFilter]}
-          {#if dueFilter !== "all"}
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <span
-              class="pill-x"
-              role="button"
-              tabindex="-1"
-              title="Show all due dates"
-              onclick={(e) => {
-                e.stopPropagation();
-                pickDue("all");
-              }}>✕</span
-            >
-          {:else}
-            <span class="caret">▾</span>
-          {/if}
-        </button>
-        {#if filterMenu === "due"}
-          <div class="fmenu">
-            {#each DUE_CYCLE as d (d)}
-              <button class="fmenu-item" class:sel={dueFilter === d} onclick={() => pickDue(d)}>
-                {DUE_LABELS[d]}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </span>
-    </div>
-  {/if}
-  {#if filterMenu}
-    <div
-      class="fmenu-backdrop"
-      role="presentation"
-      onkeydown={() => {}}
-      onclick={() => (filterMenu = null)}
-    ></div>
+    <FilterBar {todos} bind:catFilter bind:dueFilter bind:menu={filterMenu} onchange={() => (selected = 0)} />
   {/if}
 
   <div class="list">
@@ -1108,6 +968,8 @@
     {/each}
   </div>
 
+  <Toast bind:this={printToast}>To print, open the full-size view with <kbd>L</kbd></Toast>
+
   <footer>
     <span class="hints">
       <span class="hint">
@@ -1279,93 +1141,6 @@
   .update-x:hover {
     color: var(--danger);
     opacity: 1;
-  }
-  .filterbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    border-bottom: 1px solid var(--border);
-  }
-  .filter {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 1px 10px;
-    font: inherit;
-    font-size: 11px;
-    color: var(--text-dim);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .filter:hover {
-    color: var(--text);
-    border-color: var(--accent);
-  }
-  .filter.active {
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-  .pill-x {
-    margin-left: 2px;
-    font-size: 11px;
-    opacity: 0.7;
-  }
-  .pill-x:hover {
-    color: var(--danger);
-    opacity: 1;
-  }
-  .filter .caret {
-    font-size: 9px;
-    opacity: 0.7;
-  }
-  .filterwrap {
-    position: relative;
-  }
-  .fmenu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 16;
-    min-width: 160px;
-    max-height: 220px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    padding: 4px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
-  }
-  .fmenu-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: none;
-    border: none;
-    border-radius: 4px;
-    padding: 5px 10px;
-    font: inherit;
-    font-size: 12px;
-    color: var(--text);
-    text-align: left;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .fmenu-item:hover {
-    background: var(--bg);
-  }
-  .fmenu-item.sel {
-    color: var(--accent);
-  }
-  .fmenu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 15;
   }
   .list {
     flex: 1;

@@ -31,6 +31,8 @@ check. Tray menu → **Check for updates…** looks right away.
 | `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
+| `L` | Toggle between the small popup and the full-size view |
+| `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
@@ -118,6 +120,26 @@ categories are never changed. Examples live in [`samples/import`](samples/import
   clickable and open in the browser. `N` (or the pencil in the panel) edits;
   `Ctrl+Enter` saves, saving an empty note removes it. Done view shows notes
   read-only.
+
+### Full-size view
+
+For the big picture, press `L` in the popup (or pick **Show full list** in the
+tray menu). The list grows to fill the screen it's on, keeping the current
+view and filters, and shows every todo with its full text and notes. `L` or
+`Esc` shrinks it back to the small popup; like the popup, it also hides when
+you click elsewhere.
+
+- View only, as the pill at the top says: nothing here changes your todos.
+  Go back to the small popup to edit. Pressing an edit key (`Enter`, `E`,
+  `D`, `C`, `N`, `Del`) or clicking a todo's circle briefly shows
+  "View only — press L to edit". Edits from quick-add show up right away
+- `Tab`, `T` and `F` switch views and filters just like in the popup
+- Scroll with the mouse wheel, `↑` / `↓` (or `j` / `k`), `PgUp` / `PgDn`,
+  `Space` and `Home` / `End`
+- `Ctrl+P` (or the **Print** button) prints the current view, or saves it as
+  PDF, with its filters as heading. Overdue and soon-due todos are marked in
+  text, so the printout works in black and white. The browser's own header
+  and footer (date, URL) are left out, whatever the print dialog says
 
 ## Data
 
