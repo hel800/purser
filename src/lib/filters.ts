@@ -34,6 +34,15 @@ export function categoryCycle(todos: Todo[]): CategoryFilter[] {
   return ids;
 }
 
+/**
+ * The filter itself, or `null` (all) when it names a category no todo has any
+ * more, e.g. after its last todo was completed elsewhere. Pass open todos only.
+ */
+export function existingCategory(todos: Todo[], filter: CategoryFilter): CategoryFilter {
+  if (filter === null || filter === -1) return filter;
+  return todos.some((t) => t.category_id === filter) ? filter : null;
+}
+
 /** Label and dot color for a category filter value. */
 export function categoryInfo(
   todos: Todo[],

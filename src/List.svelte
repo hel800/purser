@@ -9,6 +9,7 @@
   import {
     DUE_LABELS,
     categoryInfo,
+    existingCategory,
     filterTodos,
     groupByCategory,
     nextCategory,
@@ -79,6 +80,13 @@
     if (seq !== loadSeq) return; // a newer load superseded this one
     view = v;
     todos = data;
+    dropStaleCategory();
+  }
+
+  /** Falls back to all categories when the filtered one has no open todos left. */
+  function dropStaleCategory() {
+    // Done todos say nothing about open categories; the filter only applies to Open
+    if (view === "open") catFilter = existingCategory(todos, catFilter);
   }
 
   function reload() {
@@ -129,6 +137,7 @@
     await load(next.view);
     catFilter = next.catFilter;
     dueFilter = next.dueFilter;
+    dropStaleCategory();
     filterMenu = null;
     listEl?.scrollTo({ top: 0 });
   }
