@@ -12,6 +12,8 @@ export interface AppSettings {
    *  accelerator text and the help sheet can never disagree */
   quickAddPretty: string;
   listPretty: string;
+  /** language due dates are typed in; "auto" follows the Windows language */
+  dateLanguage: "auto" | "en" | "de";
 }
 
 export const settings: AppSettings = $state({
@@ -21,6 +23,7 @@ export const settings: AppSettings = $state({
   listShortcut: "ctrl+alt+l",
   quickAddPretty: "Ctrl+Alt+N",
   listPretty: "Ctrl+Alt+L",
+  dateLanguage: "auto",
 });
 
 function apply(s: AppSettings) {
@@ -30,6 +33,7 @@ function apply(s: AppSettings) {
   settings.listShortcut = s.listShortcut;
   settings.quickAddPretty = s.quickAddPretty;
   settings.listPretty = s.listPretty;
+  settings.dateLanguage = s.dateLanguage;
 }
 
 export async function initSettings(): Promise<void> {

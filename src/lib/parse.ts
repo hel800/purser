@@ -62,9 +62,11 @@ export function parseDueDate(input: string): string | null {
   return findDate(input, dateLanguage())?.date.toISOString() ?? null;
 }
 
-/** Language that due dates are typed in: German on a German Windows
- *  (WebView2 reports its display language), English otherwise. */
-function dateLanguage(): DateLanguage {
+/** Language that due dates are typed in: the tray setting, or with
+ *  "auto" German on a German Windows (WebView2 reports its display
+ *  language) and English otherwise. */
+export function dateLanguage(): DateLanguage {
+  if (settings.dateLanguage === "en" || settings.dateLanguage === "de") return settings.dateLanguage;
   return navigator.language.toLowerCase().startsWith("de") ? "de" : "en";
 }
 

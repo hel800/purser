@@ -53,6 +53,10 @@ struct Settings {
     quick_add_shortcut: String,
     #[serde(default = "default_list_shortcut")]
     list_shortcut: String,
+    /// Language due dates are typed in: "auto" (the Windows display
+    /// language), "en" or "de".
+    #[serde(default = "default_date_language")]
+    date_language: String,
     /// Where to look for `latest.json` instead of the latest GitHub release.
     /// Not exposed in the UI: a hand-edited settings.json entry for testing
     /// pre-releases, e.g. `https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json`.
@@ -72,6 +76,10 @@ fn default_list_shortcut() -> String {
     DEFAULT_LIST_SHORTCUT.into()
 }
 
+fn default_date_language() -> String {
+    "auto".into()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -79,6 +87,7 @@ impl Default for Settings {
             auto_update_check: default_true(),
             quick_add_shortcut: default_quick_add_shortcut(),
             list_shortcut: default_list_shortcut(),
+            date_language: default_date_language(),
             update_endpoint: None,
         }
     }
@@ -95,6 +104,7 @@ struct SettingsDto {
     list_shortcut: String,
     quick_add_pretty: String,
     list_pretty: String,
+    date_language: String,
 }
 
 impl From<&Settings> for SettingsDto {
@@ -106,6 +116,7 @@ impl From<&Settings> for SettingsDto {
             list_shortcut: s.list_shortcut.clone(),
             quick_add_pretty: pretty_shortcut(&s.quick_add_shortcut),
             list_pretty: pretty_shortcut(&s.list_shortcut),
+            date_language: s.date_language.clone(),
         }
     }
 }
@@ -991,11 +1002,31 @@ pub fn run() {
                     settings.auto_update_check,
                     None::<&str>,
                 )?;
+                // three check items that behave like radio buttons
+                let date_language_item = |language: &str, label: &str| {
+                    CheckMenuItem::with_id(
+                        app,
+                        format!("date_language_{language}"),
+                        label,
+                        true,
+                        settings.date_language == language,
+                        None::<&str>,
+                    )
+                };
+                let date_auto = date_language_item("auto", "Automatic (Windows language)")?;
+                let date_en = date_language_item("en", "English")?;
+                let date_de = date_language_item("de", "Deutsch")?;
+                let date_language_menu = Submenu::with_items(
+                    app,
+                    "Date input",
+                    true,
+                    &[&date_auto, &date_en, &date_de],
+                )?;
                 let settings_menu = Submenu::with_items(
                     app,
                     "Settings",
                     true,
-                    &[&autostart_item, &hour24_item, &auto_update_item],
+                    &[&autostart_item, &hour24_item, &auto_update_item, &date_language_menu],
                 )?;
 
                 let add_text = format!(
@@ -1023,6 +1054,11 @@ pub fn run() {
                 let autostart_check = autostart_item.clone();
                 let hour24_check = hour24_item.clone();
                 let auto_update_check = auto_update_item.clone();
+                let date_language_checks = [
+                    ("auto", date_auto.clone()),
+                    ("en", date_en.clone()),
+                    ("de", date_de.clone()),
+                ];
 
                 TrayIconBuilder::with_id("main")
                     .icon(if taskbar_is_light() {
@@ -1057,6 +1093,17 @@ pub fn run() {
                         "auto_update" => {
                             let on = auto_update_check.is_checked().unwrap_or(true);
                             update_settings(app, |s| s.auto_update_check = on);
+                        }
+                        id if id.starts_with("date_language_") => {
+                            let chosen = &id["date_language_".len()..];
+                            // the click toggled only the clicked item; check
+                            // it again (a second click would uncheck it) and
+                            // uncheck the others
+                            for (language, item) in &date_language_checks {
+                                let _ = item.set_checked(*language == chosen);
+                            }
+                            let chosen = chosen.to_string();
+                            update_settings(app, |s| s.date_language = chosen);
                         }
                         "quit" => app.exit(0),
                         "help" => show_help(app, None),
