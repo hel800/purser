@@ -29,9 +29,13 @@ async function getDb(): Promise<Database> {
   return db;
 }
 
-/** Tells every window (e.g. the full list) that todos or categories changed. */
-async function notifyChanged(): Promise<void> {
-  await emit("purser://todos-changed");
+/**
+ * Tells every window (e.g. the full list) that todos or categories changed.
+ * Fire-and-forget: the write has already succeeded, so a failed emit must not
+ * make the caller's await throw, and the UI shouldn't wait on the round-trip.
+ */
+function notifyChanged(): void {
+  emit("purser://todos-changed").catch(() => {});
 }
 
 const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, c.color AS category_color,
@@ -87,7 +91,7 @@ export async function addTodo(
     "INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ($1, $2, $3, $4, $5)",
     [text, notes, categoryId, dueAt, new Date().toISOString()]
   );
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function openTodos(): Promise<Todo[]> {
@@ -111,19 +115,19 @@ export async function doneTodos(): Promise<Todo[]> {
 export async function markDone(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET done_at = $1 WHERE id = $2", [new Date().toISOString(), id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function markOpen(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET done_at = NULL WHERE id = $1", [id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function updateText(id: number, text: string): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function updateTodoCategory(id: number, categoryName: string | null): Promise<void> {
@@ -131,32 +135,32 @@ export async function updateTodoCategory(id: number, categoryName: string | null
   const clean = categoryName?.trim() ?? "";
   if (!clean) {
     await d.execute("UPDATE todos SET category_id = NULL WHERE id = $1", [id]);
-    await notifyChanged();
+    notifyChanged();
     return;
   }
   // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
   if (!isValidCategoryName(clean)) return;
   const categoryId = await getOrCreateCategory(d, clean);
   await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function updateNotes(id: number, notes: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET notes = $1 WHERE id = $2", [notes || null, id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function deleteTodo(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("DELETE FROM todos WHERE id = $1", [id]);
-  await notifyChanged();
+  notifyChanged();
 }
 
 export async function updateCategory(id: number, name: string, color: string): Promise<void> {
@@ -175,5 +179,5 @@ export async function updateCategory(id: number, name: string, color: string): P
     color,
     id,
   ]);
-  await notifyChanged();
+  notifyChanged();
 }
