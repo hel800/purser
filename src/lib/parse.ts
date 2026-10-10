@@ -1,4 +1,4 @@
-import * as chrono from "chrono-node";
+import { findDate, type DateLanguage } from "./dates";
 import { settings } from "./settings.svelte";
 
 export interface ParsedTodo {
@@ -20,7 +20,7 @@ export function isValidCategoryName(name: string): boolean {
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
  * the joint account" into text, topic (#tag), due date (natural language
- * via chrono) and an optional note after a " // " separator.
+ * in the date input language) and an optional note after a " // " separator.
  */
 export function parseTodo(input: string): ParsedTodo {
   let { text, notes } = splitNote(input);
@@ -33,11 +33,10 @@ export function parseTodo(input: string): ParsedTodo {
   }
 
   let dueAt: string | null = null;
-  const results = chrono.parse(text, new Date(), { forwardDate: true });
-  if (results.length > 0) {
-    const r = results[0];
-    dueAt = r.date().toISOString();
-    text = (text.slice(0, r.index) + text.slice(r.index + r.text.length))
+  const found = findDate(text, dateLanguage());
+  if (found) {
+    dueAt = found.date.toISOString();
+    text = (text.slice(0, found.index) + text.slice(found.index + found.text.length))
       .replace(/\s{2,}/g, " ")
       .trim();
   }
@@ -60,8 +59,13 @@ export function splitNote(input: string): { text: string; notes: string | null }
 }
 
 export function parseDueDate(input: string): string | null {
-  const results = chrono.parse(input, new Date(), { forwardDate: true });
-  return results.length ? results[0].date().toISOString() : null;
+  return findDate(input, dateLanguage())?.date.toISOString() ?? null;
+}
+
+/** Language that due dates are typed in: German on a German Windows
+ *  (WebView2 reports its display language), English otherwise. */
+function dateLanguage(): DateLanguage {
+  return navigator.language.toLowerCase().startsWith("de") ? "de" : "en";
 }
 
 export function formatDue(iso: string | null): string {
