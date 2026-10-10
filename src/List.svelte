@@ -114,7 +114,12 @@
     printedAt = new Date();
     // the dialog takes focus; without this the view would hide on blur
     await invoke("begin_print");
-    window.print();
+    try {
+      // blocks until the print preview closes, or returns at once if none opens
+      window.print();
+    } finally {
+      await invoke("end_print");
+    }
   }
 
   function scrollList(by: number) {

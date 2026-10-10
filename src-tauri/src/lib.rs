@@ -306,6 +306,7 @@ fn show_list(app: &AppHandle, state: serde_json::Value) {
     let Some(win) = app.get_webview_window("list") else {
         return;
     };
+    end_print_inner(app);
     if let Some(monitor) = popup_monitor(&win) {
         let area = monitor.work_area();
         let _ = win.set_position(area.position);
@@ -321,6 +322,7 @@ fn show_list(app: &AppHandle, state: serde_json::Value) {
 
 /// Back from the full-size view to the small popup, keeping view and filters.
 fn hide_list(app: &AppHandle, state: serde_json::Value) {
+    end_print_inner(app);
     if let Some(win) = app.get_webview_window("list") {
         let _ = win.hide();
     }
@@ -342,6 +344,18 @@ fn open_list(app: AppHandle, state: serde_json::Value) {
 #[tauri::command]
 fn begin_print(app: AppHandle) {
     app.state::<Printing>().0.store(true, Ordering::Relaxed);
+}
+
+/// Called once `window.print()` returns. If no dialog ever took focus (print
+/// failed, no printer…), the focus-gain that normally clears the flag never
+/// comes, and the next real blur would leave the view on top of everything.
+#[tauri::command]
+fn end_print(app: AppHandle) {
+    end_print_inner(&app);
+}
+
+fn end_print_inner(app: &AppHandle) {
+    app.state::<Printing>().0.store(false, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -528,6 +542,7 @@ pub fn run() {
             open_list,
             close_list,
             begin_print,
+            end_print,
             close_help
         ])
         .setup(|app| {
