@@ -1,0 +1,52 @@
+# Builds the Windows installer for a version tag and attaches it, its updater
+# signature and the `latest.json` manifest to a draft GitHub release.
+# Publishing the draft makes the version visible to installed apps, which
+# check `releases/latest/download/latest.json` on startup.
+#
+# Release steps: bump the version in tauri.conf.json, package.json and
+# Cargo.toml, commit, then `git tag v0.5.0 && git push origin v0.5.0`.
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (content of the updater private key) and,
+# if the key has one, TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: purser __VERSION__
+          releaseBody: Download `Purser___VERSION___x64-setup.exe` to install. Installed apps update themselves.
+          releaseDraft: true
+          # a pre-release tag like v0.4.1-beta.1 is marked as such; installed
+          # apps only follow `releases/latest`, which skips pre-releases
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          updaterJsonPreferNsis: true

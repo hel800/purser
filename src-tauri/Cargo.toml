@@ -1,6 +1,6 @@
 [package]
 name = "purser"
-version = "0.4.0"
+version = "0.5.0"
 description = "Keyboard-driven tray todo app"
 authors = ["Sebastian Schaefer"]
 edition = "2021"
@@ -20,8 +20,10 @@ tauri-plugin-autostart = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-updater = "2.13.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"

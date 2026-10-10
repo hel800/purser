@@ -1,0 +1,12 @@
+title #category next monday //a note
+pay rent friday 5pm #finance
+water plants
+
+prepare demo tomorrow 9am #work // agenda: budget, https://example.org/prep
+renew passport in 2 weeks #private //bring the old one #documents
+• Review TICKET-839 Monday #Project1 //https://example.org/TICKET-839
+• RM TICKET-223 //https://example.org/TICKET-223
+• Complete review skills Sep 25
+Übersicht für Bürokosten prüfen #Büro
+https://example.org/only-a-link
+[ ] markdown is not supported, so this stays plain text

@@ -23,17 +23,7 @@ export function isValidCategoryName(name: string): boolean {
  * via chrono) and an optional note after a " // " separator.
  */
 export function parseTodo(input: string): ParsedTodo {
-  let text = input.trim();
-
-  // "//" starts the note when preceded by whitespace (or at the start of
-  // the line) — inside "https://…" it follows a ":", so URLs never match.
-  // No space needed after it: "call bob //agenda" works.
-  let notes: string | null = null;
-  const sep = text.match(/(^|\s)\/\//);
-  if (sep && sep.index !== undefined) {
-    notes = text.slice(sep.index + sep[0].length).trim() || null;
-    text = text.slice(0, sep.index).trim();
-  }
+  let { text, notes } = splitNote(input);
 
   let topic: string | null = null;
   const tagMatch = text.match(new RegExp(`#(${TAG_CHARS}+)`, "u"));
@@ -53,6 +43,20 @@ export function parseTodo(input: string): ParsedTodo {
   }
 
   return { text, topic, dueAt, notes };
+}
+
+/** Split a quick-add line at its " //" note separator. */
+export function splitNote(input: string): { text: string; notes: string | null } {
+  const text = input.trim();
+  // "//" starts the note when preceded by whitespace (or at the start of
+  // the line) — inside "https://…" it follows a ":", so URLs never match.
+  // No space needed after it: "call bob //agenda" works.
+  const sep = text.match(/(^|\s)\/\//);
+  if (!sep || sep.index === undefined) return { text, notes: null };
+  return {
+    text: text.slice(0, sep.index).trim(),
+    notes: text.slice(sep.index + sep[0].length).trim() || null,
+  };
 }
 
 export function parseDueDate(input: string): string | null {

@@ -8,6 +8,11 @@ Download the latest `Purser_x.y.z_x64-setup.exe` from the
 [Releases](https://github.com/hel800/purser/releases) page and run it
 (Windows 10/11 x64; WebView2 is bootstrapped automatically if missing).
 
+Once installed, Purser checks for a newer release when it starts and once a
+day after that. If there is one, the popup shows a banner — `U` installs it
+(the installer runs and Purser restarts); `✕` postpones it until the next
+check. Tray menu → **Check for updates…** looks right away.
+
 ## Usage
 
 | Shortcut | Action |
@@ -38,6 +43,9 @@ Left-clicking the tray icon also opens the list; right-click shows a menu.
   release-build launch; your choice sticks afterwards)
 - **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
   stored in `settings.json` next to the database
+- **Check for updates automatically** — on by default; looks for a newer
+  release at startup, once a day and when the popup opens. Off means only
+  the tray's **Check for updates…** looks
 
 ### Quick-add syntax
 
@@ -56,6 +64,43 @@ water plants
   dates and `#tags` in the note are left untouched, and URLs like
   `https://…` in the title are never mistaken for the separator
 - A half-typed todo survives closing the popup and is still there when it reopens
+
+### Importing todos
+
+Tray menu → **Import todos…** (or the `⇧` button in the popup's footer)
+picks a `.txt` or `.csv` file and adds its todos. Import only ever adds — existing todos and
+categories are never changed. Examples live in [`samples/import`](samples/import).
+
+- **`.txt`** — one todo per line in quick-add syntax
+  (`title #category next monday //a note`); blank lines are ignored and a
+  leading `•` bullet (pasted from Confluence, Word, …) is dropped. Markdown
+  is not supported — `[ ]` or `[text](url)` stay plain text
+- **Links become notes** — a URL in the title moves into the note, and a
+  `#tag` at the very end of a note becomes the category when the title has
+  none (`call Bob //https://… #work`). A line that is only a URL has no
+  todo text and is skipped
+- **`.csv`** (`,` `;` or tab separated, quoted fields supported):
+  - with a header row: a `text` (or `todo`/`task`/`title`) column in
+    quick-add syntax, plus optional `due`, `category` and `notes` columns
+    that take precedence over what the text says. A row whose `due` cell
+    can't be read as a date is skipped; a `category` cell that isn't a
+    valid `#tag` name (e.g. contains spaces) is ignored
+  - Jira exports, recognized by the English column names `Issue key` and
+    `Summary`: the title is `KEY Summary` as-is, `Due Date` becomes the due
+    date, a `Description` column (if exported) the note. Issues in status
+    Done, Closed, Resolved, Cancelled, Rejected, Won't Do or Completed are
+    skipped. An export with localized (e.g. German) column names is read as
+    a plain CSV
+  - without a header: each row is joined into one quick-add line
+- Files may be UTF-8, UTF-16 with byte-order mark (Excel "Unicode text"), or
+  Latin-1 (older Excel CSV exports) — umlauts come through in all three
+- Exact copies of existing todos (same text, category, due date and note —
+  open or done) are not imported again; the summary says how many. Relative
+  dates with a time of day, like `in 2 weeks`, include the moment of import,
+  so importing such a line again later adds a new todo
+- More than 50 new todos need a confirmation; unreadable, empty, binary,
+  malformed or larger than 200 KB files are rejected with an error and
+  nothing is imported
 
 ### Categories and due dates
 
@@ -130,6 +175,51 @@ npm run tauri build    # produce NSIS installer (Windows)
 ```
 
 Requires Rust (MSVC toolchain on Windows) and Node.
+
+### Releasing
+
+Releases are built by the `release` GitHub workflow. Main only takes pull
+requests, so the bump goes through one: on a branch, set the version in
+`src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`
+(and refresh both lock files), open a pull request and merge it. Then tag the
+merge commit on main and push the tag:
+
+```
+git checkout main && git pull
+git tag v0.5.0
+git push origin v0.5.0
+```
+
+The workflow builds the installer, signs it for the updater and attaches the
+installer, the `.sig` file and `latest.json` to a **draft** release. Write the
+release notes there ("Generate release notes" lists the merged pull requests)
+and publish the draft to roll the version out — installed apps read
+`releases/latest/download/latest.json`.
+
+Updates are signed with a key pair created by `npm run tauri signer generate`.
+The public key lives in `tauri.conf.json`; the private key is the repository
+secret `TAURI_SIGNING_PRIVATE_KEY` (plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+if it has one). Keep a copy of the private key somewhere safe: without it no
+installed version can accept an update again. A local `npm run tauri build`
+needs the same key in the `TAURI_SIGNING_PRIVATE_KEY` environment variable
+(or its path in `TAURI_SIGNING_PRIVATE_KEY_PATH`), because
+`createUpdaterArtifacts` is on.
+
+#### Testing an update without affecting users
+
+Tags with a pre-release suffix (`v0.4.1-beta.1`) are marked as pre-release
+when the draft is published. Installed apps follow `releases/latest`, which
+skips pre-releases, so nobody else sees them. To make one installation look
+at a pre-release instead, add to its `settings.json`
+(`%APPDATA%\com.sschaefer.purser\settings.json`, with the app closed):
+
+```json
+"updateEndpoint": "https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json"
+```
+
+A full dry run: release `v0.4.1-beta.1` and install it, set `updateEndpoint`
+to the `v0.4.1-beta.2` manifest, release `v0.4.1-beta.2`, start Purser and
+use tray → **Check for updates…**. Remove the entry afterwards.
 
 ## Notes
 Developed with the support of AI (Anthropic Claude Code)
