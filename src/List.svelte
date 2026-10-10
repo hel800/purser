@@ -156,9 +156,12 @@
     // pulled rather than only pushed: a hand-over sent before this webview
     // mounted (L right after startup) would otherwise be lost
     pullState();
-    // edits in the popup or quick-add show up right away; the focus reload
-    // also refreshes overdue/soon highlighting after time has passed
-    const unlistenChanged = listen("purser://todos-changed", reload);
+    // edits in the popup or quick-add show up right away while the view is
+    // open; a hidden view skips them, since the focus reload on show fetches
+    // anyway (and also refreshes overdue/soon highlighting after time passed)
+    const unlistenChanged = listen("purser://todos-changed", async () => {
+      if (await win.isVisible()) reload();
+    });
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
       if (focused) reload();
     });
