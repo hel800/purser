@@ -122,30 +122,40 @@
     }
   }
 
+  /** Takes over the view and filters handed over by the popup (null: a fresh Open view). */
+  async function applyState(state: ViewState | null) {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const next: ViewState = state ?? { view: "open", catFilter: null, dueFilter: "all" };
+    await load(next.view);
+    catFilter = next.catFilter;
+    dueFilter = next.dueFilter;
+    filterMenu = null;
+    listEl?.scrollTo({ top: 0 });
+  }
+
+  /** Pulls the hand-over state from Rust, which keeps it until the next hand-over. */
+  async function pullState() {
+    await applyState(await invoke<ViewState | null>("list_state"));
+  }
+
   function scrollList(by: number) {
     listEl?.scrollBy({ top: by });
   }
 
   onMount(() => {
     initSettings();
-    reload();
+    // pulled rather than only pushed: a hand-over sent before this webview
+    // mounted (L right after startup) would otherwise be lost
+    pullState();
     // edits in the popup or quick-add show up right away; the focus reload
     // also refreshes overdue/soon highlighting after time has passed
     const unlistenChanged = listen("purser://todos-changed", reload);
     const unlistenFocus = win.onFocusChanged(({ payload: focused }) => {
       if (focused) reload();
     });
-    // sent before the window shows: the popup's view and filters, or null
-    // (opened from the tray) for a fresh Open view
-    const unlistenState = listen<ViewState | null>("purser://list-state", async (e) => {
-      (document.activeElement as HTMLElement | null)?.blur?.();
-      const state: ViewState = e.payload ?? { view: "open", catFilter: null, dueFilter: "all" };
-      await load(state.view);
-      catFilter = state.catFilter;
-      dueFilter = state.dueFilter;
-      filterMenu = null;
-      listEl?.scrollTo({ top: 0 });
-    });
+    // sent before the window shows, once the popup's view and filters (or
+    // null, when opened from the tray) are stored for us to pull
+    const unlistenState = listen("purser://list-state", pullState);
     return () => {
       unlistenChanged.then((f) => f());
       unlistenFocus.then((f) => f());

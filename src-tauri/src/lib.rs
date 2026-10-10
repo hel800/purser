@@ -113,6 +113,11 @@ struct Capturing(AtomicBool);
 /// or the dialog disappears with it.
 struct Printing(AtomicBool);
 
+/// The view and filters handed from the popup to the full-size view. Kept
+/// here for the view to pull, since an event sent before its webview has
+/// mounted (L right after startup) would be lost.
+struct ListState(Mutex<serde_json::Value>);
+
 fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     app.path()
         .app_config_dir()
@@ -312,7 +317,9 @@ fn show_list(app: &AppHandle, state: serde_json::Value) {
         let _ = win.set_position(area.position);
         let _ = win.set_size(area.size);
     }
-    let _ = win.emit("purser://list-state", state);
+    *app.state::<ListState>().0.lock().unwrap() = state;
+    // tells a mounted view to pull the new state (see `list_state`)
+    let _ = win.emit("purser://list-state", ());
     let _ = win.show();
     let _ = win.set_focus();
     if let Some(popup) = app.get_webview_window("popup") {
@@ -337,6 +344,12 @@ fn hide_list(app: &AppHandle, state: serde_json::Value) {
 #[tauri::command]
 fn open_list(app: AppHandle, state: serde_json::Value) {
     show_list(&app, state);
+}
+
+/// The state last handed to the full-size view, or null for a fresh Open view.
+#[tauri::command]
+fn list_state(state: tauri::State<'_, ListState>) -> serde_json::Value {
+    state.0.lock().unwrap().clone()
 }
 
 /// Called right before `window.print()`; cleared when the view regains focus
@@ -540,6 +553,7 @@ pub fn run() {
             open_about,
             open_help,
             open_list,
+            list_state,
             close_list,
             begin_print,
             end_print,
@@ -557,6 +571,7 @@ pub fn run() {
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
             app.manage(Printing(AtomicBool::new(false)));
+            app.manage(ListState(Mutex::new(serde_json::Value::Null)));
             app.manage(TrayShortcutItems(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
