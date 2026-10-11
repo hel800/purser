@@ -42,7 +42,8 @@ jobs:
       - name: vite build
         run: npm run build
 
-      # future: `npm test` goes here once a test runner exists
+      - name: vitest
+        run: npm test
 
   rust:
     name: rust (${{ matrix.name }})
@@ -92,4 +93,7 @@ jobs:
       - name: cargo build
         run: cargo build --manifest-path src-tauri/Cargo.toml --locked
 
-      # future: `cargo test --manifest-path src-tauri/Cargo.toml --locked` goes here
+      # --lib: main.rs has no tests and there are no doctests, so this skips
+      # linking a second Tauri binary (slow on the Windows runner)
+      - name: cargo test
+        run: cargo test --lib --manifest-path src-tauri/Cargo.toml --locked
