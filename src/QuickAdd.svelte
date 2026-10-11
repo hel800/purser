@@ -211,9 +211,7 @@
   </div>
   <div class="hints" bind:this={hintsEl}>
     {#if parsed.dueAt}
-      <!-- a date that is already over as it is typed is most likely a typo:
-           warn in the chip, but Enter still saves it (no dialog, no extra key) -->
-      <span class="chip due" class:past={parsed.duePast} title={parsed.duePast ? "This date is already in the past" : undefined}>{parsed.duePast ? "⚠" : "📅"} {formatDue(parsed.dueAt)}{#if parsed.duePast} · in the past{/if}</span>
+      <span class="chip due">📅 {formatDue(parsed.dueAt)}</span>
     {/if}
     {#if parsed.category}
       <span class="chip category">#{parsed.category}</span>
@@ -337,10 +335,6 @@
   }
   .chip.due {
     color: var(--accent);
-  }
-  /* same red as an overdue todo in the list — that is what it would become */
-  .chip.due.past {
-    color: var(--danger);
   }
   .chip.category {
     color: var(--ok);

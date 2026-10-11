@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, isValidCategoryName, linkify } from "./lib/parse";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
     filterTodos,
@@ -142,15 +142,12 @@
     return match ? match.name.slice(v.length) : "";
   });
 
-  // live preview of the due-date editor; `past` warns about a date that is
-  // already over as it is typed (likely a typo) — Enter still saves it
   let editPreview = $derived.by(() => {
-    if (!editing || editing.field !== "due") return { text: "", past: false };
+    if (!editing || editing.field !== "due") return "";
     const v = editing.value.trim();
-    if (!v) return { text: "no due date", past: false };
-    const due = parseDueEntry(v);
-    if (!due) return { text: "…", past: false };
-    return { text: due.past ? `⚠ ${formatDue(due.dueAt)} · in the past` : formatDue(due.dueAt), past: due.past };
+    if (!v) return "no due date";
+    const iso = parseDueDate(v);
+    return iso ? formatDue(iso) : "…";
   });
 
   const win = getCurrentWindow();
@@ -907,7 +904,7 @@
               placeholder="friday 5pm · empty = none"
               spellcheck="false"
             />
-            <span class="preview" class:past={editPreview.past}>{editPreview.text}</span>
+            <span class="preview">{editPreview}</span>
           {:else}
             {#if todo.due_at}
               {@const status = view === "open" ? dueStatus(todo.due_at) : null}
@@ -1439,9 +1436,6 @@
     font-size: 12px;
     color: var(--accent);
     white-space: nowrap;
-  }
-  .preview.past {
-    color: var(--danger);
   }
   /* flexible middle region: text takes its natural width so the pen
      sits directly after the words, not at the far right edge */
