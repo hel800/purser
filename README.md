@@ -182,6 +182,7 @@ running instance.
 npm install
 npm run tauri dev      # run with hot reload
 npm run check          # svelte-check: type-check .svelte and .ts files
+npm test               # vitest: unit tests for the parsers (src/lib/*.test.ts)
 npm run tauri build    # produce NSIS installer (Windows)
 ```
 
@@ -192,15 +193,27 @@ workflow before it can be merged. It runs on Windows and Linux:
 
 ```
 npm run check
+npm test
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 cargo build --manifest-path src-tauri/Cargo.toml --locked
+cargo test --lib --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 Run `cargo fmt --manifest-path src-tauri/Cargo.toml` before committing; clippy
 warnings are errors in CI. The installer is only built by the `release`
 workflow (see below).
+
+**Tests.** Frontend unit tests sit next to the module they cover
+(`src/lib/parse.test.ts` tests `src/lib/parse.ts`) and run with vitest:
+`npm test`, `npm run test:watch`, or one file with
+`npx vitest run src/lib/import.test.ts`. The import tests read the files in
+`samples/import`. Rust unit tests live in `src-tauri/src/tests.rs`:
+`cargo test --lib --manifest-path src-tauri/Cargo.toml`, one test with
+`… -- read_settings_file`. Date tests run in `Europe/Berlin` (set in
+`vitest.config.ts`) with the clock frozen at Sun 11 Oct 2026 13:02:05 via
+`freezeAt`, so results do not depend on the machine's zone or the weekday.
 
 ### Releasing
 
