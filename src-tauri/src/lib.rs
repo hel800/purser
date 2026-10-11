@@ -700,8 +700,15 @@ struct UpdateInfo {
 fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     use tauri_plugin_updater::UpdaterExt;
 
+    // The popup's onMount fires an automatic update check as soon as its
+    // webview loads, which can race with setup(): if a second instance is
+    // being killed by the single-instance plugin, its popup starts loading
+    // but setup() never runs, so Settings is not yet managed. `try_state`
+    // keeps that case a plain command error (the popup swallows automatic
+    // check failures and retries) instead of panicking the tokio worker.
     let endpoint = app
-        .state::<Mutex<Settings>>()
+        .try_state::<Mutex<Settings>>()
+        .ok_or_else(|| "the app is still starting".to_string())?
         .lock()
         .unwrap()
         .update_endpoint
