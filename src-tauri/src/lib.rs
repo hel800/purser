@@ -578,7 +578,8 @@ const CP1252_HIGH: [char; 32] = [
 /// 0x80–0x9F, where the euro sign, dashes and typographic quotes live.
 fn decode_text(bytes: &[u8]) -> String {
     let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| from([c[0], c[1]])).collect();
+        // a trailing odd byte is dropped, as with chunks_exact
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| from(c)).collect();
         String::from_utf16_lossy(&units)
     };
     match bytes {
