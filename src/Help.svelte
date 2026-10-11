@@ -212,6 +212,7 @@
       <div class="row"><span class="keys"><kbd>T</kbd></span>Cycle category filter</div>
       <div class="row"><span class="keys"><kbd>F</kbd></span>Cycle due-date filter</div>
       <div class="row"><span class="keys"><kbd>Del</kbd></span>Delete permanently (Done view)</div>
+      <div class="row"><span class="keys"><kbd>L</kbd></span>Full-size view, view only (<kbd>Ctrl+P</kbd> prints)</div>
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Close popup</div>
     </section>
 
