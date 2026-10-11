@@ -171,10 +171,26 @@ running instance.
 ```
 npm install
 npm run tauri dev      # run with hot reload
+npm run check          # svelte-check: type-check .svelte and .ts files
 npm run tauri build    # produce NSIS installer (Windows)
 ```
 
-Requires Rust (MSVC toolchain on Windows) and Node.
+Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 22).
+
+Main only takes pull requests, and every pull request must pass the `CI`
+workflow before it can be merged. It runs on Windows and Linux:
+
+```
+npm run check
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+cargo build --manifest-path src-tauri/Cargo.toml --locked
+```
+
+Run `cargo fmt --manifest-path src-tauri/Cargo.toml` before committing; clippy
+warnings are errors in CI. The installer is only built by the `release`
+workflow (see below).
 
 ### Releasing
 
