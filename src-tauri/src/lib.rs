@@ -159,22 +159,27 @@ fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 }
 
 /// Returns the stored settings and whether this is the first run.
+fn load_settings(app: &AppHandle) -> (Settings, bool) {
+    match settings_path(app) {
+        Some(path) => read_settings_file(&path),
+        None => (Settings::default(), false),
+    }
+}
+
+/// Reads `path`; a missing file means the first run.
 ///
 /// A broken `settings.json` would otherwise be silently replaced by defaults
 /// on the next save — the user's choices gone without a word. Instead, log
 /// the parse error and move the file aside to `settings.json.bak` so the
 /// original is still recoverable.
-fn load_settings(app: &AppHandle) -> (Settings, bool) {
-    let Some(path) = settings_path(app) else {
-        return (Settings::default(), false);
-    };
-    match std::fs::read_to_string(&path) {
+fn read_settings_file(path: &std::path::Path) -> (Settings, bool) {
+    match std::fs::read_to_string(path) {
         Ok(raw) => match serde_json::from_str(&raw) {
             Ok(settings) => (settings, false),
             Err(e) => {
                 eprintln!("settings.json unreadable ({e}); backing up to settings.json.bak and starting with defaults");
                 let bak = path.with_file_name("settings.json.bak");
-                if let Err(e) = std::fs::rename(&path, &bak) {
+                if let Err(e) = std::fs::rename(path, &bak) {
                     eprintln!("could not back up settings.json: {e}");
                 }
                 (Settings::default(), false)
@@ -185,9 +190,12 @@ fn load_settings(app: &AppHandle) -> (Settings, bool) {
 }
 
 fn save_settings(app: &AppHandle, settings: &Settings) {
-    let Some(path) = settings_path(app) else {
-        return;
-    };
+    if let Some(path) = settings_path(app) {
+        write_settings_file(&path, settings);
+    }
+}
+
+fn write_settings_file(path: &std::path::Path, settings: &Settings) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -771,8 +779,7 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
         version: u.version.clone(),
     });
     // managed a few lines after Settings in setup(); same race, same answer
-    *app
-        .try_state::<PendingUpdate>()
+    *app.try_state::<PendingUpdate>()
         .ok_or_else(|| "the app is still starting".to_string())?
         .0
         .lock()
