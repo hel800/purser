@@ -700,8 +700,17 @@ struct UpdateInfo {
 fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     use tauri_plugin_updater::UpdaterExt;
 
+    // Tauri builds the windows from tauri.conf.json right before it runs our
+    // setup() hook, so the popup webview is already loading while setup() is
+    // still reading settings.json. `check_update` is async and runs on the
+    // tokio pool without waiting for the main thread, so its first call can
+    // arrive before `app.manage(Mutex::new(settings))` (seen in `tauri dev`,
+    // where Vite serves the page hot). `try_state` turns that into a plain
+    // command error, which the popup swallows for automatic checks and
+    // retries, instead of a panic on the tokio worker.
     let endpoint = app
-        .state::<Mutex<Settings>>()
+        .try_state::<Mutex<Settings>>()
+        .ok_or_else(|| "the app is still starting".to_string())?
         .lock()
         .unwrap()
         .update_endpoint
@@ -731,7 +740,13 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let info = update.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
     });
-    *app.state::<PendingUpdate>().0.lock().unwrap() = update;
+    // managed a few lines after Settings in setup(); same race, same answer
+    *app
+        .try_state::<PendingUpdate>()
+        .ok_or_else(|| "the app is still starting".to_string())?
+        .0
+        .lock()
+        .unwrap() = update;
     Ok(info)
 }
 
