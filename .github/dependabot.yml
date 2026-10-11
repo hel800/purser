@@ -12,7 +12,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # svelte-check 4.x accepts TypeScript 5 and 6 only
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
+      # vite and its svelte plugin pin each other's major: upgrade them together
+      vite:
+        patterns: ["vite", "@sveltejs/vite-plugin-svelte"]
       npm-minor-patch:
         update-types: ["minor", "patch"]
 
