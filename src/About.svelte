@@ -8,8 +8,6 @@
 
   const REPO_URL = "https://github.com/hel800/purser";
 
-  // set by vite's define at build time
-  declare const __BUILD_DATE__: string;
   const releaseDate = new Date(__BUILD_DATE__ + "T00:00:00Z");
   const released = releaseDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
