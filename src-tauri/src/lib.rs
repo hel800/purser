@@ -771,8 +771,7 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
         version: u.version.clone(),
     });
     // managed a few lines after Settings in setup(); same race, same answer
-    *app
-        .try_state::<PendingUpdate>()
+    *app.try_state::<PendingUpdate>()
         .ok_or_else(|| "the app is still starting".to_string())?
         .0
         .lock()
