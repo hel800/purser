@@ -3,7 +3,7 @@ import { settings } from "./settings.svelte";
 
 export interface ParsedTodo {
   text: string;
-  topic: string | null;
+  category: string | null;
   dueAt: string | null; // ISO string
   notes: string | null;
 }
@@ -19,16 +19,16 @@ export function isValidCategoryName(name: string): boolean {
 
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
- * the joint account" into text, topic (#tag), due date (natural language
+ * the joint account" into text, category (#tag), due date (natural language
  * via chrono) and an optional note after a " // " separator.
  */
 export function parseTodo(input: string): ParsedTodo {
   let { text, notes } = splitNote(input);
 
-  let topic: string | null = null;
+  let category: string | null = null;
   const tagMatch = text.match(new RegExp(`#(${TAG_CHARS}+)`, "u"));
   if (tagMatch) {
-    topic = tagMatch[1];
+    category = tagMatch[1];
     text = (text.slice(0, tagMatch.index) + text.slice(tagMatch.index! + tagMatch[0].length)).trim();
   }
 
@@ -42,7 +42,7 @@ export function parseTodo(input: string): ParsedTodo {
       .trim();
   }
 
-  return { text, topic, dueAt, notes };
+  return { text, category, dueAt, notes };
 }
 
 /** Split a quick-add line at its " //" note separator. */

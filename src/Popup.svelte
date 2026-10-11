@@ -115,7 +115,7 @@
   }
 
   // the pick list below the "new category" input: every category, then a
-  // "No topic" row to remove the assignment
+  // "No category" row to remove the assignment
   let catMenuItems = $derived.by(() => {
     const items: CatMenuItem[] = [];
     for (const c of allCategories) {
@@ -153,7 +153,7 @@
   const win = getCurrentWindow();
 
   let groups: Group[] = $derived.by(() => {
-    if (view === "done") return todos.length ? [{ id: null, topic: "Done", color: null, todos }] : [];
+    if (view === "done") return todos.length ? [{ id: null, category: "Done", color: null, todos }] : [];
     return groupByCategory(visibleTodos);
   });
 
@@ -282,7 +282,7 @@
   });
 
   // flat index across groups follows the todos array order because
-  // grouping preserves the SQL sort (topic, then due date)
+  // grouping preserves the SQL sort (category, then due date)
   let flat = $derived(groups.flatMap((g) => g.todos));
 
   // moving the selection to another todo auto-hides an open notes panel
@@ -451,7 +451,7 @@
     if (!group.id || catEdit) return;
     // fresh list for duplicate detection (quick-add may have added categories)
     listCategories().then((c) => (allCategories = c));
-    catEdit = { id: group.id, name: group.topic, color: group.color ?? "#6ea8fe" };
+    catEdit = { id: group.id, name: group.category, color: group.color ?? "#6ea8fe" };
   }
 
   async function saveCatEdit() {
@@ -806,7 +806,7 @@
                 <button class="cat-cancel" title="Cancel (Esc)" onclick={cancelCatEdit}>✕</button>
               </span>
             {:else}
-              {group.topic}
+              {group.category}
               {#if group.id}
                 <button class="pen" title="Edit category" onclick={() => startCatEdit(group)}>✎</button>
               {/if}
@@ -1043,7 +1043,7 @@
             onfocus={() => (catMenuActive = i + 1)}
           >
             {#if item.kind === "none"}
-              No topic
+              No category
             {:else}
               <span class="dot" style:background={item.color}></span>
               {item.name}
