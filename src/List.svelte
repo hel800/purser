@@ -44,7 +44,7 @@
 
   // filters narrow the Open view only; Done always shows everything (as in the popup)
   let groups: Group[] = $derived.by(() => {
-    if (view === "done") return todos.length ? [{ id: null, topic: "Done", color: null, todos }] : [];
+    if (view === "done") return todos.length ? [{ id: null, category: "Done", color: null, todos }] : [];
     return groupByCategory(filterTodos(todos, catFilter, dueFilter));
   });
 
@@ -323,7 +323,7 @@
               {#if group.id}
                 <span class="dot" style:background={group.color ?? "#6ea8fe"}></span>
               {/if}
-              {group.topic}
+              {group.category}
             </h2>
           {/if}
           {#each group.todos as todo (todo.id)}
