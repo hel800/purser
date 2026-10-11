@@ -111,6 +111,11 @@ categories are never changed. Examples live in [`samples/import`](samples/import
 - Hover a todo row for pencils to edit its text and due date by mouse
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
   next working day before 12:00
+- A due date that is already over as you type it — a full date with the wrong
+  year or day, `today 9am` in the afternoon, `yesterday` — is shown in red
+  with "in the past" in the quick-add chip and the `D` editor's preview. It is
+  only a nudge for a likely typo: saving works as usual. A plain `today` is
+  fine
 
 ### Notes
 

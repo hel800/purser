@@ -20,9 +20,11 @@ export function isValidCategoryName(name: string): boolean {
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
  * the joint account" into text, topic (#tag), due date (natural language
- * via chrono) and an optional note after a " // " separator.
+ * via chrono) and an optional note after a " // " separator. `duePast`
+ * flags a due date that was already over when it was typed (see
+ * `isPastOnEntry`), so the preview can warn about a likely typo.
  */
-export function parseTodo(input: string): ParsedTodo {
+export function parseTodo(input: string): ParsedTodo & { duePast: boolean } {
   let { text, notes } = splitNote(input);
 
   let topic: string | null = null;
@@ -33,16 +35,19 @@ export function parseTodo(input: string): ParsedTodo {
   }
 
   let dueAt: string | null = null;
-  const results = chrono.parse(text, new Date(), { forwardDate: true });
+  let duePast = false;
+  const now = new Date();
+  const results = chrono.parse(text, now, { forwardDate: true });
   if (results.length > 0) {
     const r = results[0];
     dueAt = r.date().toISOString();
+    duePast = isPastOnEntry(r, now);
     text = (text.slice(0, r.index) + text.slice(r.index + r.text.length))
       .replace(/\s{2,}/g, " ")
       .trim();
   }
 
-  return { text, topic, dueAt, notes };
+  return { text, topic, dueAt, notes, duePast };
 }
 
 /** Split a quick-add line at its " //" note separator. */
@@ -59,9 +64,31 @@ export function splitNote(input: string): { text: string; notes: string | null }
   };
 }
 
+/**
+ * True when a due date was already over the moment it was typed — an
+ * earlier day, or a time today that has passed ("today 9am" at 17:00).
+ * Almost always a typo (wrong year or day in a full date), so the previews
+ * warn; saving stays allowed. Decided from chrono's result, not the ISO
+ * string: without a typed time chrono fills in the current clock time for
+ * "today" and "yesterday" and noon for other days, so only the calendar day
+ * is compared then — a plain "today" is fine, "yesterday" is not.
+ */
+export function isPastOnEntry(result: chrono.ParsedResult, now: Date): boolean {
+  const due = result.date();
+  if (result.start.isCertain("hour")) return due.getTime() < now.getTime();
+  return new Date(due).setHours(0, 0, 0, 0) < new Date(now).setHours(0, 0, 0, 0);
+}
+
+/** A due date typed by hand (quick-add or the D editor), with the typo nudge. */
+export function parseDueEntry(input: string): { dueAt: string; past: boolean } | null {
+  const now = new Date();
+  const results = chrono.parse(input, now, { forwardDate: true });
+  if (results.length === 0) return null;
+  return { dueAt: results[0].date().toISOString(), past: isPastOnEntry(results[0], now) };
+}
+
 export function parseDueDate(input: string): string | null {
-  const results = chrono.parse(input, new Date(), { forwardDate: true });
-  return results.length ? results[0].date().toISOString() : null;
+  return parseDueEntry(input)?.dueAt ?? null;
 }
 
 export function formatDue(iso: string | null): string {
