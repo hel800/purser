@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { resolve } from "path";
 
+const root = import.meta.dirname;
+
 // Tauri expects a fixed dev server port
 export default defineConfig({
   plugins: [svelte()],
@@ -20,11 +22,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        popup: resolve(__dirname, "index.html"),
-        quickadd: resolve(__dirname, "quickadd.html"),
-        about: resolve(__dirname, "about.html"),
-        help: resolve(__dirname, "help.html"),
-        list: resolve(__dirname, "list.html"),
+        popup: resolve(root, "index.html"),
+        quickadd: resolve(root, "quickadd.html"),
+        about: resolve(root, "about.html"),
+        help: resolve(root, "help.html"),
+        list: resolve(root, "list.html"),
       },
     },
   },
