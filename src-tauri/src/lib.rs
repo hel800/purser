@@ -471,7 +471,10 @@ fn start_import(app: &AppHandle) {
             let path = picked.and_then(|p| p.into_path().ok());
             match path {
                 Some(path) => import_path(&handle, &path),
-                None => handle.state::<Importing>().0.store(false, Ordering::Relaxed),
+                None => handle
+                    .state::<Importing>()
+                    .0
+                    .store(false, Ordering::Relaxed),
             }
         });
 }
@@ -526,7 +529,9 @@ fn watch_import_ack(app: &AppHandle, generation: u32, file_name: String) {
             show_import_message(
                 &handle,
                 MessageDialogKind::Error,
-                format!("Could not import {file_name}: the import did not start. Please try again."),
+                format!(
+                    "Could not import {file_name}: the import did not start. Please try again."
+                ),
             );
         }
     });
@@ -535,7 +540,9 @@ fn watch_import_ack(app: &AppHandle, generation: u32, file_name: String) {
 /// The popup webview received the import request (see `ImportAck`).
 #[tauri::command]
 fn import_started(app: AppHandle) {
-    app.state::<ImportAck>().acked.store(true, Ordering::Relaxed);
+    app.state::<ImportAck>()
+        .acked
+        .store(true, Ordering::Relaxed);
 }
 
 /// Returns (is_csv, decoded text) or a user-facing reason why the file
@@ -586,7 +593,8 @@ const CP1252_HIGH: [char; 32] = [
 /// 0x80–0x9F, where the euro sign, dashes and typographic quotes live.
 fn decode_text(bytes: &[u8]) -> String {
     let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| from([c[0], c[1]])).collect();
+        // a trailing odd byte is dropped, as with chunks_exact
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| from(c)).collect();
         String::from_utf16_lossy(&units)
     };
     match bytes {
@@ -652,7 +660,10 @@ fn import_finished(
         ),
         None => (
             MessageDialogKind::Info,
-            format!("Imported {} from {file_name}.", plural(imported, "todo", "todos")),
+            format!(
+                "Imported {} from {file_name}.",
+                plural(imported, "todo", "todos")
+            ),
         ),
     };
     if error.is_some() && imported > 0 {
@@ -665,7 +676,11 @@ fn import_finished(
         text.push_str(&format!(
             "\n\n{} not imported because {} already.",
             plural(duplicates, "todo was", "todos were"),
-            if duplicates == 1 { "it exists" } else { "they exist" }
+            if duplicates == 1 {
+                "it exists"
+            } else {
+                "they exist"
+            }
         ));
     }
     if skipped > 0 {
@@ -874,8 +889,14 @@ fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), Stri
     let settings_state = app.state::<Mutex<Settings>>();
     let mut settings = settings_state.lock().unwrap();
     let (old_raw, other_raw) = match id.as_str() {
-        "quick_add" => (settings.quick_add_shortcut.clone(), settings.list_shortcut.clone()),
-        "list" => (settings.list_shortcut.clone(), settings.quick_add_shortcut.clone()),
+        "quick_add" => (
+            settings.quick_add_shortcut.clone(),
+            settings.list_shortcut.clone(),
+        ),
+        "list" => (
+            settings.list_shortcut.clone(),
+            settings.quick_add_shortcut.clone(),
+        ),
         _ => return Err("Unknown shortcut id.".into()),
     };
     // compare parsed values, not strings, so "alt+ctrl+n" == "ctrl+alt+n"
@@ -910,7 +931,10 @@ fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), Stri
         if let Err(revert_err) = register_both(&app) {
             let _ = app.emit(
                 "purser://shortcut-error",
-                format!("Restoring {} also failed: {revert_err}", pretty_shortcut(&old_raw)),
+                format!(
+                    "Restoring {} also failed: {revert_err}",
+                    pretty_shortcut(&old_raw)
+                ),
             );
         }
         return Err(e);
@@ -1125,7 +1149,6 @@ pub fn run() {
                     pretty_shortcut(&settings.quick_add_shortcut)
                 );
                 let list_text = format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut));
-                
 
                 let menu = Menu::with_items(
                     app,
@@ -1138,7 +1161,13 @@ pub fn run() {
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
                         &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?,
+                        &MenuItem::with_id(
+                            app,
+                            "update",
+                            "Check for updates…",
+                            true,
+                            None::<&str>,
+                        )?,
                         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
                     ],
                 )?;
@@ -1202,8 +1231,14 @@ pub fn run() {
 
                 // keep refs so the tray accelerator text can be refreshed
                 *app.state::<TrayShortcutItems>().0.lock().unwrap() = Some((
-                    menu.get("add").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
-                    menu.get("list").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
+                    menu.get("add")
+                        .ok_or("missing tray item")?
+                        .as_menuitem_unchecked()
+                        .clone(),
+                    menu.get("list")
+                        .ok_or("missing tray item")?
+                        .as_menuitem_unchecked()
+                        .clone(),
                 ));
 
                 let args: Vec<String> = std::env::args().skip(1).collect();
@@ -1221,7 +1256,11 @@ pub fn run() {
             }
             WindowEvent::Focused(true) if window.label() == "list" => {
                 // back from the print dialog (or any other return): blur hides again
-                window.app_handle().state::<Printing>().0.store(false, Ordering::Relaxed);
+                window
+                    .app_handle()
+                    .state::<Printing>()
+                    .0
+                    .store(false, Ordering::Relaxed);
             }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
