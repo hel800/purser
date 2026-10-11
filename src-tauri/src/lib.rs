@@ -159,27 +159,12 @@ fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 }
 
 /// Returns the stored settings and whether this is the first run.
-///
-/// A broken `settings.json` would otherwise be silently replaced by defaults
-/// on the next save — the user's choices gone without a word. Instead, log
-/// the parse error and move the file aside to `settings.json.bak` so the
-/// original is still recoverable.
 fn load_settings(app: &AppHandle) -> (Settings, bool) {
     let Some(path) = settings_path(app) else {
         return (Settings::default(), false);
     };
     match std::fs::read_to_string(&path) {
-        Ok(raw) => match serde_json::from_str(&raw) {
-            Ok(settings) => (settings, false),
-            Err(e) => {
-                eprintln!("settings.json unreadable ({e}); backing up to settings.json.bak and starting with defaults");
-                let bak = path.with_file_name("settings.json.bak");
-                if let Err(e) = std::fs::rename(&path, &bak) {
-                    eprintln!("could not back up settings.json: {e}");
-                }
-                (Settings::default(), false)
-            }
-        },
+        Ok(raw) => (serde_json::from_str(&raw).unwrap_or_default(), false),
         Err(_) => (Settings::default(), true),
     }
 }

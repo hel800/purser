@@ -17,15 +17,14 @@ check. Tray menu → **Check for updates…** looks right away.
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+Alt+N` | Quick-add popup (global, remappable) |
-| `Ctrl+Alt+L` | Todo list popup above the tray/clock (global, remappable) |
+| `Ctrl+Alt+N` | Quick-add popup (global) |
+| `Ctrl+Alt+L` | Todo list popup above the tray/clock (global) |
 | `Enter` | Quick-add: save · List: tick selected todo (moves it to Done) |
 | `Tab` / `→` | Quick-add: accept the inline category suggestion |
 | `Ctrl+⌫` | Quick-add: clear the input |
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
 | `E` or `F2` | Edit the text of the selected open todo |
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
-| `C` | Change the category of the selected open todo |
 | `Space` | Show/hide the notes of the selected todo |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `T` | Cycle the category filter (all → each category → no category) |
@@ -34,13 +33,9 @@ check. Tray menu → **Check for updates…** looks right away.
 | `Del` | Done view: delete permanently |
 | `L` | Toggle between the small popup and the full-size view |
 | `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
-| `U` | Install the offered update (when the update banner is showing) |
-| `?` / `F1` | Open the keyboard-shortcuts sheet (also remaps the two global shortcuts) |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
-The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
-(`?` or `F1`); the sheet records the next combination you press.
 
 ### Settings (tray menu → Settings)
 

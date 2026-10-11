@@ -177,7 +177,7 @@
       // the textarea wraps visually only — Enter never inserts a newline
       e.preventDefault();
       if (parsed.text.length === 0) return;
-      await addTodo(parsed.text, parsed.category, parsed.dueAt, parsed.notes);
+      await addTodo(parsed.text, parsed.topic, parsed.dueAt, parsed.notes);
       value = "";
       await emit("purser://refresh");
       await win.hide();
@@ -213,8 +213,8 @@
     {#if parsed.dueAt}
       <span class="chip due">📅 {formatDue(parsed.dueAt)}</span>
     {/if}
-    {#if parsed.category}
-      <span class="chip category">#{parsed.category}</span>
+    {#if parsed.topic}
+      <span class="chip topic">#{parsed.topic}</span>
     {/if}
     {#if parsed.notes}
       <span class="chip note">📝 note</span>
@@ -336,7 +336,7 @@
   .chip.due {
     color: var(--accent);
   }
-  .chip.category {
+  .chip.topic {
     color: var(--ok);
   }
   .chip.note {

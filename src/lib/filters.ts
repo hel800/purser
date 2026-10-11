@@ -19,7 +19,7 @@ export const DUE_LABELS: Record<DueFilter, string> = {
 
 export interface Group {
   id: number | null;
-  category: string;
+  topic: string;
   color: string | null;
   todos: Todo[];
 }
@@ -88,7 +88,7 @@ export function filterTodos(todos: Todo[], category: CategoryFilter, due: DueFil
   );
 }
 
-/** Groups todos by category, keeping the SQL order (category, then due date). */
+/** Groups todos by category, keeping the SQL order (topic, then due date). */
 export function groupByCategory(todos: Todo[]): Group[] {
   const map = new Map<number, Group>();
   for (const t of todos) {
@@ -96,7 +96,7 @@ export function groupByCategory(todos: Todo[]): Group[] {
     if (!map.has(key)) {
       map.set(key, {
         id: t.category_id,
-        category: t.category_name || "No category",
+        topic: t.category_name || "No topic",
         color: t.category_color,
         todos: [],
       });

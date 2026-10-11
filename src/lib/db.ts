@@ -43,7 +43,7 @@ const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, 
 
 const FROM = `FROM todos t LEFT JOIN categories c ON c.id = t.category_id`;
 
-/// Resolves a category name, creating it (with a color) if needed.
+/// Resolves a topic name to a category, creating it (with a color) if needed.
 async function getOrCreateCategory(d: Database, name: string): Promise<number | null> {
   const clean = name.trim();
   if (!clean) return null;
@@ -81,7 +81,7 @@ export async function listCategories(): Promise<Category[]> {
 
 export interface NewTodo {
   text: string;
-  category: string | null;
+  topic: string | null;
   dueAt: string | null;
   notes: string | null;
 }
@@ -101,10 +101,10 @@ export async function addTodos(todos: NewTodo[], onChunk?: (inserted: number) =>
   if (todos.length === 0) return;
   const d = await getDb();
   const categoryIds = new Map<string, number | null>();
-  const categoryKey = (t: NewTodo) => (t.category ?? "").trim().toLowerCase();
+  const categoryKey = (t: NewTodo) => (t.topic ?? "").trim().toLowerCase();
   for (const t of todos) {
     const key = categoryKey(t);
-    if (!categoryIds.has(key)) categoryIds.set(key, await getOrCreateCategory(d, t.category ?? ""));
+    if (!categoryIds.has(key)) categoryIds.set(key, await getOrCreateCategory(d, t.topic ?? ""));
   }
   const createdAt = new Date().toISOString();
   try {
@@ -130,11 +130,11 @@ export async function addTodos(todos: NewTodo[], onChunk?: (inserted: number) =>
 
 export function addTodo(
   text: string,
-  category: string | null,
+  topic: string | null,
   dueAt: string | null,
   notes: string | null = null
 ): Promise<void> {
-  return addTodos([{ text, category, dueAt, notes }]);
+  return addTodos([{ text, topic, dueAt, notes }]);
 }
 
 /** Identity of a todo for duplicate detection: text, category (case-
