@@ -12,6 +12,9 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+#[cfg(test)]
+mod tests;
+
 const DEFAULT_QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
 const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
 

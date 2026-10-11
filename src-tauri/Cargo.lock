@@ -3280,6 +3280,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-sql",
  "tauri-plugin-updater",
+ "tempfile",
  "winreg 0.56.0",
 ]
 
