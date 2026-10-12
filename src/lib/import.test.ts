@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportError, parseImport, parseImportLine } from "./import";
 import { todoKey } from "./db";
+import { settings } from "./settings.svelte";
 
 /** Sun 11 Oct 2026 13:02:05, Europe/Berlin (TZ is pinned in vitest.config.ts). */
 const NOW = new Date(2026, 9, 11, 13, 2, 5);
@@ -23,6 +24,8 @@ function sample(name: string): string {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
+  // "auto" would follow the machine's language; the samples are English
+  settings.dateLanguage = "en";
 });
 afterEach(() => vi.useRealTimers());
 

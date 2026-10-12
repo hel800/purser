@@ -9,7 +9,7 @@ fictional; links point to `example.org`.
 | `new-todos.txt` | A `//` note ending in `#tag` (becomes the category), a URL in the title (moves to the note), a plain long line |
 | `quick-add-syntax.txt` | Full quick-add syntax, dates (`next monday`, `friday 5pm`, `in 2 weeks`), a `#word` that stays in the note, `•` bullets, umlauts, a URL-only line (skipped), markdown kept as plain text |
 | `todos-header.csv` | Comma-separated with a `text,due,category,notes` header: quoted fields with commas, a multi-line note, a `#` category, an unreadable due date (row skipped) |
-| `todos-excel-de.csv` | Semicolon-separated without header, as Excel exports it in German locales |
+| `todos-excel-de.csv` | Semicolon-separated without header, as Excel exports it in German locales; German due dates (`in 2 Wochen`, `nächsten Samstag`) |
 | `todos-excel-ansi.csv` | Excel's "CSV (Comma delimited)" (not UTF-8) in Windows-1252 with CRLF: `€`, `–`, `„“` and `‚‘` plus umlauts must come through intact |
 | `jira-export.csv` | Jira CSV export layout (duplicate `Affects Version/s` column, `""` quoting, `2026-Dec-17 00:00` dates); Done/Closed issues are skipped, no notes |
 | `jira-export-description.csv` | Jira export with a `Description` column (becomes the note) and the `02/Oct/26 3:00 PM` date format |
@@ -23,6 +23,10 @@ fictional; links point to `example.org`.
 | `empty.txt` | the file is empty |
 | `binary.csv` | not a text file (contains NUL bytes) |
 | `broken-quote.csv` | invalid CSV — a quote is never closed |
+
+Due dates are read in the **Date input** language (tray → Settings): the
+German dates in `todos-excel-de.csv` need German, the English ones in the
+other files need English. Jira dates work in both.
 
 Importing a valid file a second time (e.g. `new-todos.txt`) demonstrates
 duplicate detection: the summary reports the todos that already exist

@@ -1,4 +1,4 @@
-import * as chrono from "chrono-node";
+import { findDate, type DateLanguage, type FoundDate } from "./dates";
 import { settings } from "./settings.svelte";
 
 export interface ParsedTodo {
@@ -20,8 +20,8 @@ export function isValidCategoryName(name: string): boolean {
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
  * the joint account" into text, category (#tag), due date (natural language
- * via chrono) and an optional note after a " // " separator. `duePast`
- * flags a due date that was already over when it was typed (see
+ * in the date input language) and an optional note after a " // " separator.
+ * `duePast` flags a due date that was already over when it was typed (see
  * `isPastOnEntry`), so the preview can warn about a likely typo.
  */
 export function parseTodo(input: string): ParsedTodo & { duePast: boolean } {
@@ -37,12 +37,11 @@ export function parseTodo(input: string): ParsedTodo & { duePast: boolean } {
   let dueAt: string | null = null;
   let duePast = false;
   const now = new Date();
-  const results = chrono.parse(text, now, { forwardDate: true });
-  if (results.length > 0) {
-    const r = results[0];
-    dueAt = r.date().toISOString();
-    duePast = isPastOnEntry(r, now);
-    text = (text.slice(0, r.index) + text.slice(r.index + r.text.length))
+  const found = findDate(text, dateLanguage(), now);
+  if (found) {
+    dueAt = found.date.toISOString();
+    duePast = isPastOnEntry(found, now);
+    text = (text.slice(0, found.index) + text.slice(found.index + found.text.length))
       .replace(/\s{2,}/g, " ")
       .trim();
   }
@@ -68,27 +67,34 @@ export function splitNote(input: string): { text: string; notes: string | null }
  * True when a due date was already over the moment it was typed — an
  * earlier day, or a time today that has passed ("today 9am" at 17:00).
  * Almost always a typo (wrong year or day in a full date), so the previews
- * warn; saving stays allowed. Decided from chrono's result, not the ISO
+ * warn; saving stays allowed. Decided from the parse result, not the ISO
  * string: without a typed time chrono fills in the current clock time for
  * "today" and "yesterday" and noon for other days, so only the calendar day
  * is compared then — a plain "today" is fine, "yesterday" is not.
  */
-export function isPastOnEntry(result: chrono.ParsedResult, now: Date): boolean {
-  const due = result.date();
-  if (result.start.isCertain("hour")) return due.getTime() < now.getTime();
-  return new Date(due).setHours(0, 0, 0, 0) < new Date(now).setHours(0, 0, 0, 0);
+export function isPastOnEntry(found: FoundDate, now: Date): boolean {
+  if (found.timeKnown) return found.date.getTime() < now.getTime();
+  return new Date(found.date).setHours(0, 0, 0, 0) < new Date(now).setHours(0, 0, 0, 0);
 }
 
 /** A due date typed by hand (quick-add or the D editor), with the typo nudge. */
 export function parseDueEntry(input: string): { dueAt: string; past: boolean } | null {
   const now = new Date();
-  const results = chrono.parse(input, now, { forwardDate: true });
-  if (results.length === 0) return null;
-  return { dueAt: results[0].date().toISOString(), past: isPastOnEntry(results[0], now) };
+  const found = findDate(input, dateLanguage(), now);
+  if (!found) return null;
+  return { dueAt: found.date.toISOString(), past: isPastOnEntry(found, now) };
 }
 
 export function parseDueDate(input: string): string | null {
   return parseDueEntry(input)?.dueAt ?? null;
+}
+
+/** Language that due dates are typed in: the tray setting, or with
+ *  "auto" German on a German Windows (WebView2 reports its display
+ *  language) and English otherwise. */
+export function dateLanguage(): DateLanguage {
+  if (settings.dateLanguage === "en" || settings.dateLanguage === "de") return settings.dateLanguage;
+  return navigator.language.toLowerCase().startsWith("de") ? "de" : "en";
 }
 
 export function formatDue(iso: string | null): string {

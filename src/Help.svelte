@@ -5,6 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Logo from "./lib/Logo.svelte";
   import { initSettings, settings } from "./lib/settings.svelte";
+  import { dateLanguage } from "./lib/parse";
 
   let recording: "quick_add" | "list" | null = null;
   let error: string | null = null;
@@ -225,9 +226,28 @@
       <div class="row"><span class="keys"><kbd>Esc</kbd></span>Hide popup</div>
     </section>
 
+    <section>
+      <h2>Dates</h2>
+      {#if dateLanguage() === "de"}
+        <div class="row"><span class="keys"><kbd>Fr 15 Uhr</kbd></span>Weekday and time</div>
+        <div class="row"><span class="keys"><kbd>morgen</kbd> <kbd>in 2 Wochen</kbd></span>Relative</div>
+        <div class="row"><span class="keys"><kbd>Ende Oktober</kbd></span>Also Anfang, Mitte</div>
+        <div class="row"><span class="keys"><kbd>KW 44</kbd></span>Monday of calendar week 44</div>
+        <div class="row"><span class="keys"><kbd>23.12.</kbd></span>Next 23 December</div>
+      {:else}
+        <div class="row"><span class="keys"><kbd>friday 5pm</kbd></span>Weekday and time</div>
+        <div class="row"><span class="keys"><kbd>tomorrow</kbd> <kbd>in 2 weeks</kbd></span>Relative</div>
+        <div class="row"><span class="keys"><kbd>end of October</kbd></span>Also early, mid</div>
+      {/if}
+      <div class="row"><span class="keys"><kbd>20261223</kbd></span>Compact date</div>
+      <p class="note">Language: tray → Settings → Date input</p>
+    </section>
+
     <p class="tip">
       Dates and <kbd>#categories</kbd> parse as you type — try
-      <span class="code">pay rent friday 5pm #finance</span>
+      <span class="code">
+        {dateLanguage() === "de" ? "Miete zahlen Fr 17 Uhr #finanzen" : "pay rent friday 5pm #finance"}
+      </span>
     </p>
   </div>
 </main>
@@ -355,6 +375,11 @@
     margin-top: 6px;
     font-size: 11px;
     color: var(--danger);
+  }
+  .note {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--text-dim);
   }
   .tip {
     margin-top: auto;

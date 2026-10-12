@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as chrono from "chrono-node";
+import { findDate } from "./dates";
 import { settings } from "./settings.svelte";
 import {
   dueStatus,
@@ -27,7 +27,11 @@ function freezeAt(date: Date) {
   vi.setSystemTime(date);
 }
 
-beforeEach(() => freezeAt(NOW));
+beforeEach(() => {
+  freezeAt(NOW);
+  // "auto" would follow the machine's language; these cases are English
+  settings.dateLanguage = "en";
+});
 afterEach(() => vi.useRealTimers());
 
 describe("test environment", () => {
@@ -96,7 +100,7 @@ describe("splitNote", () => {
 });
 
 describe("isPastOnEntry", () => {
-  const result = (s: string) => chrono.parse(s, NOW, { forwardDate: true })[0];
+  const result = (s: string) => findDate(s, "en", NOW)!;
 
   it("compares the clock only when a time was typed", () => {
     expect(isPastOnEntry(result("today 9am"), NOW)).toBe(true);
