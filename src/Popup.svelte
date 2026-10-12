@@ -264,12 +264,7 @@
         dueFilter = state.dueFilter;
       }
       filterMenu = null;
-      selected = 0;
-      editing = null;
-      catEdit = null;
-      catMenu = null;
-      notesOpenId = null;
-      notesEdit = null;
+      resetUi();
     });
     // imports run here (this webview is always loaded); the backend shows
     // the result and then opens the list, which refreshes it
@@ -332,6 +327,11 @@
     const data = v === "open" ? await openTodos() : await doneTodos();
     view = v;
     todos = data;
+    resetUi();
+  }
+
+  /** Back to the top of a freshly loaded list, with no edit, menu or notes open. */
+  function resetUi() {
     selected = 0;
     editing = null;
     catEdit = null;
@@ -566,14 +566,6 @@
     catMenuValue += catMenuGhost;
   }
 
-  function menuScrollIntoView(node: HTMLElement, active: boolean) {
-    function update(a: boolean) {
-      if (a) node.scrollIntoView({ block: "nearest" });
-    }
-    update(active);
-    return { update };
-  }
-
   let printToast = $state<Toast>();
 
   // the small popup would print only its visible rows: point to the
@@ -714,11 +706,12 @@
     }
   }
 
-  function scrollSelectedIntoView(node: HTMLElement, isSelected: boolean) {
-    function update(sel: boolean) {
-      if (sel) node.scrollIntoView({ block: "nearest" });
+  /** Svelte action: keeps the node scrolled into view while `active` is true. */
+  function scrollIntoViewWhen(node: HTMLElement, active: boolean) {
+    function update(isActive: boolean) {
+      if (isActive) node.scrollIntoView({ block: "nearest" });
     }
-    update(isSelected);
+    update(active);
     return { update };
   }
 </script>
@@ -823,7 +816,7 @@
           class:selected={idx === selected}
           class:leaving-right={leaving?.id === todo.id && leaving.dir === "right"}
           class:leaving-left={leaving?.id === todo.id && leaving.dir === "left"}
-          use:scrollSelectedIntoView={idx === selected}
+          use:scrollIntoViewWhen={idx === selected}
           onclick={() => (selected = idx)}
           role="option"
           aria-selected={idx === selected}
@@ -1038,7 +1031,7 @@
             aria-selected={catMenuActive === i + 1}
             tabindex="-1"
             bind:this={catMenuRows[i]}
-            use:menuScrollIntoView={catMenuActive === i + 1}
+            use:scrollIntoViewWhen={catMenuActive === i + 1}
             onclick={() => catMenuChoose(i + 1)}
             onkeydown={() => {}}
             onmousemove={() => (catMenuActive = i + 1)}
