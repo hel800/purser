@@ -982,8 +982,8 @@
       <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
-      <button class="help-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
-      <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
+      <button class="small-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
+      <button class="small-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
       <button class="wordmark-btn" onclick={openAbout} title="About Purser">
         <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
       </button>
@@ -1057,31 +1057,6 @@
     flex-direction: column;
     height: 100vh;
     border: 1px solid var(--border);
-  }
-  header {
-    display: flex;
-    gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    align-items: center;
-  }
-  .tab {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-weight: 600;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .tab.active {
-    color: var(--text);
-    border-bottom: 2px solid var(--accent);
-  }
-  header .hint {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 400;
   }
   .update {
     display: flex;
@@ -1164,13 +1139,6 @@
   }
   h2 .pen:hover {
     opacity: 1;
-  }
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-top: 1px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
   .cat-edit {
     background: var(--bg);
@@ -1493,12 +1461,6 @@
     align-items: flex-start;
     gap: 6px;
     margin: -2px 14px 6px 34px;
-    padding: 6px 10px;
-    background: var(--bg-raised);
-    border-left: 2px solid var(--border);
-    border-radius: 0 4px 4px 0;
-    font-size: 12px;
-    color: var(--text-dim);
   }
   .notes-text {
     flex: 1;
@@ -1507,17 +1469,6 @@
     overflow-wrap: anywhere;
     max-height: 8em;
     overflow-y: auto;
-  }
-  .link {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    color: var(--accent);
-    cursor: pointer;
-    text-decoration: underline;
-    text-align: left;
-    overflow-wrap: anywhere;
   }
   .notes .pen {
     opacity: 0.4;
@@ -1574,43 +1525,6 @@
     text-align: center;
     padding: 30px 0;
   }
-  footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 14px;
-    font-size: 11px;
-    color: var(--text-dim);
-    border-top: 1px solid var(--border);
-  }
-  .hints {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px 12px;
-    align-items: center;
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-  .hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-  }
-  kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--text);
-    white-space: nowrap;
-  }
   .wordmark-btn {
     background: none;
     border: none;
@@ -1618,28 +1532,6 @@
     flex-shrink: 0;
     line-height: 0;
     cursor: pointer;
-  }
-  .footer-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .help-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0 7px;
-    font: inherit;
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--text-dim);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .help-btn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
   }
   .wordmark {
     height: 9px;

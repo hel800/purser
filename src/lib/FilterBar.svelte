@@ -216,11 +216,4 @@
     inset: 0;
     z-index: 15;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-top: 1px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
 </style>

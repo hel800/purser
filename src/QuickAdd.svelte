@@ -193,7 +193,7 @@
   <div class="titlebar">
     <Logo size={18} />
     <span>Add new todo</span>
-    <button class="help" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
+    <button class="small-btn" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
     <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
   </div>
   <div class="qawrap">
@@ -253,21 +253,8 @@
     height: 9px;
     opacity: 0.75;
   }
-  .help {
+  .small-btn {
     margin-left: auto;
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0 6px;
-    font: inherit;
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .help:hover {
-    color: var(--accent);
-    border-color: var(--accent);
   }
   textarea {
     display: block;
@@ -359,24 +346,7 @@
     gap: 4px 12px;
     align-items: center;
   }
-  .hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-  }
   kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--text);
-    white-space: nowrap;
     /* the thicker bottom border shifts the key's text upward; drop the
        keycap 3px so it lines up with the hint description text */
     margin-top: 3px;

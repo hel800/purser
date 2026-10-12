@@ -301,18 +301,6 @@
     font-size: 11px;
     white-space: nowrap;
   }
-  kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    color: var(--text);
-    white-space: nowrap;
-  }
   /* pencil next to the shortcut, as in the todo list; while recording the
      same slot holds the ✕ cancel, so the row never shifts */
   .pen {
