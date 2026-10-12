@@ -113,6 +113,26 @@ function components(date: Date) {
 }
 
 /**
+ * The year rule for dates typed without one ("23.12.", "Ende Oktober",
+ * "KW 44"), kept in one place: this year's date, or next year's once this
+ * year's has passed. `dateIn` gives the date for a year (null if that year
+ * has none, e.g. 29.02.); the date counts as passed after `lastDayOf` it,
+ * which is the date itself or, for a calendar week, its Sunday.
+ */
+function inNextYearThatFits(
+  context: ParsingContext,
+  dateIn: (year: number) => Date | null,
+  lastDayOf: (date: Date) => Date = (date) => date
+) {
+  const today = startOfDay(context.refDate);
+  for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
+    const date = dateIn(year);
+    if (date && lastDayOf(date) >= today) return components(date);
+  }
+  return null;
+}
+
+/**
  * Compact ISO date "20261223" (both languages). Month and day are checked,
  * so ticket numbers like "12345678" stay plain text.
  */
@@ -130,14 +150,9 @@ const dayMonthParser: Parser = {
   // the year-less form only: "23.12.2026" and "23.12.26" are chrono's
   pattern: () => new RegExp(`(\\d{1,2})\\.(\\d{1,2})\\.(?![\\p{L}\\p{N}.])`, "u"),
   extract: (context, match) => {
-    const today = startOfDay(context.refDate);
     const day = Number(match[1]);
     const month = Number(match[2]);
-    for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
-      const date = validDate(year, month, day);
-      if (date && date >= today) return components(date);
-    }
-    return null;
+    return inNextYearThatFits(context, (year) => validDate(year, month, day));
   },
 };
 
@@ -166,9 +181,7 @@ function monthPartParser(parts: Record<string, MonthPart>, months: Record<string
         return new Date(year, month, 0); // day 0 of the next month = last day
       };
       if (match[3]) return components(dayIn(Number(match[3])));
-      const today = startOfDay(context.refDate);
-      const thisYear = dayIn(today.getFullYear());
-      return components(thisYear >= today ? thisYear : dayIn(today.getFullYear() + 1));
+      return inNextYearThatFits(context, dayIn);
     },
   };
 }
@@ -219,14 +232,9 @@ const calendarWeekParser: Parser = {
       const monday = mondayOfIsoWeek(Number(match[2]), week);
       return monday ? components(monday) : null;
     }
-    const today = startOfDay(context.refDate);
-    for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
-      const monday = mondayOfIsoWeek(year, week);
-      if (!monday) continue;
-      const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-      if (sunday >= today) return components(monday);
-    }
-    return null;
+    const sundayOf = (monday: Date) =>
+      new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    return inNextYearThatFits(context, (year) => mondayOfIsoWeek(year, week), sundayOf);
   },
 };
 
