@@ -933,7 +933,6 @@
           <div class="notes" transition:slide={{ duration: 150 }}>
             {#if notesEdit?.id === todo.id}
               <span class="notes-editor" onfocusout={onNotesFocusout}>
-                <!-- svelte-ignore a11y_autofocus -->
                 <textarea
                   class="notes-input"
                   bind:value={notesEdit.value}

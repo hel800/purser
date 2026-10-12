@@ -194,7 +194,6 @@
     <button class="help" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
     <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
   </div>
-  <!-- svelte-ignore a11y_autofocus -->
   <div class="qawrap">
     <textarea
       bind:this={inputEl}
@@ -203,7 +202,6 @@
       rows="1"
       placeholder="pay rent friday 5pm #finance"
       spellcheck="false"
-      autofocus
     ></textarea>
     <span class="ghost" aria-hidden="true">
       <span class="ghost-typed">{value}</span>{#if ghost}<span class="ghost-suffix">{ghost}</span>{/if}
