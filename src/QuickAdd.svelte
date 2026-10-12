@@ -177,7 +177,7 @@
       // the textarea wraps visually only — Enter never inserts a newline
       e.preventDefault();
       if (parsed.text.length === 0) return;
-      await addTodo(parsed.text, parsed.topic, parsed.dueAt, parsed.notes);
+      await addTodo(parsed.text, parsed.category, parsed.dueAt, parsed.notes);
       value = "";
       await emit("purser://refresh");
       await win.hide();
@@ -211,10 +211,12 @@
   </div>
   <div class="hints" bind:this={hintsEl}>
     {#if parsed.dueAt}
-      <span class="chip due">📅 {formatDue(parsed.dueAt)}</span>
+      <!-- a date that is already over as it is typed is most likely a typo:
+           warn in the chip, but Enter still saves it (no dialog, no extra key) -->
+      <span class="chip due" class:past={parsed.duePast} title={parsed.duePast ? "This date is already in the past" : undefined}>{parsed.duePast ? "⚠" : "📅"} {formatDue(parsed.dueAt)}{#if parsed.duePast} · in the past{/if}</span>
     {/if}
-    {#if parsed.topic}
-      <span class="chip topic">#{parsed.topic}</span>
+    {#if parsed.category}
+      <span class="chip category">#{parsed.category}</span>
     {/if}
     {#if parsed.notes}
       <span class="chip note">📝 note</span>
@@ -336,7 +338,11 @@
   .chip.due {
     color: var(--accent);
   }
-  .chip.topic {
+  /* same red as an overdue todo in the list — that is what it would become */
+  .chip.due.past {
+    color: var(--danger);
+  }
+  .chip.category {
     color: var(--ok);
   }
   .chip.note {

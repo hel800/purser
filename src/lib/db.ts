@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { emit } from "@tauri-apps/api/event";
 import { isValidCategoryName } from "./parse";
 
 export interface Todo {
@@ -28,12 +29,21 @@ async function getDb(): Promise<Database> {
   return db;
 }
 
+/**
+ * Tells every window (e.g. the full list) that todos or categories changed.
+ * Fire-and-forget: the write has already succeeded, so a failed emit must not
+ * make the caller's await throw, and the UI shouldn't wait on the round-trip.
+ */
+function notifyChanged(): void {
+  emit("purser://todos-changed").catch(() => {});
+}
+
 const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, c.color AS category_color,
   t.due_at, t.created_at, t.done_at`;
 
 const FROM = `FROM todos t LEFT JOIN categories c ON c.id = t.category_id`;
 
-/// Resolves a topic name to a category, creating it (with a color) if needed.
+/// Resolves a category name, creating it (with a color) if needed.
 async function getOrCreateCategory(d: Database, name: string): Promise<number | null> {
   const clean = name.trim();
   if (!clean) return null;
@@ -71,7 +81,7 @@ export async function listCategories(): Promise<Category[]> {
 
 export interface NewTodo {
   text: string;
-  topic: string | null;
+  category: string | null;
   dueAt: string | null;
   notes: string | null;
 }
@@ -91,35 +101,40 @@ export async function addTodos(todos: NewTodo[], onChunk?: (inserted: number) =>
   if (todos.length === 0) return;
   const d = await getDb();
   const categoryIds = new Map<string, number | null>();
-  const categoryKey = (t: NewTodo) => (t.topic ?? "").trim().toLowerCase();
+  const categoryKey = (t: NewTodo) => (t.category ?? "").trim().toLowerCase();
   for (const t of todos) {
     const key = categoryKey(t);
-    if (!categoryIds.has(key)) categoryIds.set(key, await getOrCreateCategory(d, t.topic ?? ""));
+    if (!categoryIds.has(key)) categoryIds.set(key, await getOrCreateCategory(d, t.category ?? ""));
   }
   const createdAt = new Date().toISOString();
-  for (let i = 0; i < todos.length; i += INSERT_CHUNK) {
-    const chunk = todos.slice(i, i + INSERT_CHUNK);
-    const params: unknown[] = [];
-    const rows = chunk.map((t) => {
-      const n = params.length;
-      params.push(t.text, t.notes, categoryIds.get(categoryKey(t)) ?? null, t.dueAt, createdAt);
-      return `($${n + 1}, $${n + 2}, $${n + 3}, $${n + 4}, $${n + 5})`;
-    });
-    await d.execute(
-      `INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ${rows.join(", ")}`,
-      params
-    );
-    onChunk?.(i + chunk.length);
+  try {
+    for (let i = 0; i < todos.length; i += INSERT_CHUNK) {
+      const chunk = todos.slice(i, i + INSERT_CHUNK);
+      const params: unknown[] = [];
+      const rows = chunk.map((t) => {
+        const n = params.length;
+        params.push(t.text, t.notes, categoryIds.get(categoryKey(t)) ?? null, t.dueAt, createdAt);
+        return `($${n + 1}, $${n + 2}, $${n + 3}, $${n + 4}, $${n + 5})`;
+      });
+      await d.execute(
+        `INSERT INTO todos (text, notes, category_id, due_at, created_at) VALUES ${rows.join(", ")}`,
+        params
+      );
+      onChunk?.(i + chunk.length);
+    }
+  } finally {
+    // also after a failed chunk: the chunks before it are already stored
+    notifyChanged();
   }
 }
 
 export function addTodo(
   text: string,
-  topic: string | null,
+  category: string | null,
   dueAt: string | null,
   notes: string | null = null
 ): Promise<void> {
-  return addTodos([{ text, topic, dueAt, notes }]);
+  return addTodos([{ text, category, dueAt, notes }]);
 }
 
 /** Identity of a todo for duplicate detection: text, category (case-
@@ -161,16 +176,19 @@ export async function doneTodos(): Promise<Todo[]> {
 export async function markDone(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET done_at = $1 WHERE id = $2", [new Date().toISOString(), id]);
+  notifyChanged();
 }
 
 export async function markOpen(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET done_at = NULL WHERE id = $1", [id]);
+  notifyChanged();
 }
 
 export async function updateText(id: number, text: string): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
+  notifyChanged();
 }
 
 export async function updateTodoCategory(id: number, categoryName: string | null): Promise<void> {
@@ -178,27 +196,32 @@ export async function updateTodoCategory(id: number, categoryName: string | null
   const clean = categoryName?.trim() ?? "";
   if (!clean) {
     await d.execute("UPDATE todos SET category_id = NULL WHERE id = $1", [id]);
+    notifyChanged();
     return;
   }
   // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
   if (!isValidCategoryName(clean)) return;
   const categoryId = await getOrCreateCategory(d, clean);
   await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
+  notifyChanged();
 }
 
 export async function updateNotes(id: number, notes: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET notes = $1 WHERE id = $2", [notes || null, id]);
+  notifyChanged();
 }
 
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
   await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);
+  notifyChanged();
 }
 
 export async function deleteTodo(id: number): Promise<void> {
   const d = await getDb();
   await d.execute("DELETE FROM todos WHERE id = $1", [id]);
+  notifyChanged();
 }
 
 export async function updateCategory(id: number, name: string, color: string): Promise<void> {
@@ -217,4 +240,5 @@ export async function updateCategory(id: number, name: string, color: string): P
     color,
     id,
   ]);
+  notifyChanged();
 }

@@ -56,7 +56,7 @@ export function parseImportLine(raw: string): ParsedTodo | null {
   if (!parsed.text) return null;
   return {
     text: parsed.text,
-    topic: parsed.topic ?? noteTag,
+    category: parsed.category ?? noteTag,
     dueAt: parsed.dueAt,
     notes: joinNotes(notes, ...urls),
   };
@@ -185,7 +185,7 @@ function parseJiraRows(header: string[], rows: string[][]): ImportResult {
       skipped++;
       continue;
     }
-    items.push({ text, topic: null, dueAt, notes: cell(description) || null });
+    items.push({ text, category: null, dueAt, notes: cell(description) || null });
   }
   return { items, skipped };
 }
@@ -212,7 +212,7 @@ function parseHeaderRows(header: string[], rows: string[][], textCol: number): I
     const cat = cell(category).replace(/^#/, "");
     items.push({
       text: todo.text,
-      topic: cat && isValidCategoryName(cat) ? cat : todo.topic,
+      category: cat && isValidCategoryName(cat) ? cat : todo.category,
       dueAt: dueAt ?? todo.dueAt,
       notes: joinNotes(todo.notes, cell(notes)),
     });
@@ -270,7 +270,7 @@ export async function runImport({ fileName, csv, content }: ImportRequest): Prom
     // of the same file — are left out
     const seen = await existingTodoKeys();
     const fresh = result.items.filter((t) => {
-      const key = todoKey(t.text, t.topic, t.dueAt, t.notes);
+      const key = todoKey(t.text, t.category, t.dueAt, t.notes);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

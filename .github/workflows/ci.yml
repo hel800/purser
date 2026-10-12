@@ -1,0 +1,99 @@
+# Fast gate for pull requests: frontend build + svelte-check, rustfmt, clippy
+# and a plain cargo build on Windows (the shipped platform) and Linux. The
+# installer and updater artifacts are only built by the `release` workflow.
+#
+# `tauri::generate_context!` embeds ../dist at compile time, so every Rust
+# job runs `npm ci && npm run build` before any cargo command.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main] # seeds the rust-cache that PR runs restore from
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  frontend:
+    name: frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: svelte-check
+        run: npm run check
+
+      - name: vite build
+        run: npm run build
+
+      - name: vitest
+        run: npm test
+
+  rust:
+    name: rust (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: ubuntu-24.04
+            name: linux
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # builds ../dist, which generate_context! needs at compile time
+      - run: npm ci
+      - run: npm run build
+
+      - name: cargo fmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: cargo clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: cargo build
+        run: cargo build --manifest-path src-tauri/Cargo.toml --locked
+
+      # --lib: main.rs has no tests and there are no doctests, so this skips
+      # linking a second Tauri binary (slow on the Windows runner)
+      - name: cargo test
+        run: cargo test --lib --manifest-path src-tauri/Cargo.toml --locked

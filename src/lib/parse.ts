@@ -1,9 +1,9 @@
-import { findDate, type DateLanguage } from "./dates";
+import { findDate, type DateLanguage, type FoundDate } from "./dates";
 import { settings } from "./settings.svelte";
 
 export interface ParsedTodo {
   text: string;
-  topic: string | null;
+  category: string | null;
   dueAt: string | null; // ISO string
   notes: string | null;
 }
@@ -19,29 +19,34 @@ export function isValidCategoryName(name: string): boolean {
 
 /**
  * Parse a quick-add line like "pay rent friday 5pm #finance // wire from
- * the joint account" into text, topic (#tag), due date (natural language
+ * the joint account" into text, category (#tag), due date (natural language
  * in the date input language) and an optional note after a " // " separator.
+ * `duePast` flags a due date that was already over when it was typed (see
+ * `isPastOnEntry`), so the preview can warn about a likely typo.
  */
-export function parseTodo(input: string): ParsedTodo {
+export function parseTodo(input: string): ParsedTodo & { duePast: boolean } {
   let { text, notes } = splitNote(input);
 
-  let topic: string | null = null;
+  let category: string | null = null;
   const tagMatch = text.match(new RegExp(`#(${TAG_CHARS}+)`, "u"));
   if (tagMatch) {
-    topic = tagMatch[1];
+    category = tagMatch[1];
     text = (text.slice(0, tagMatch.index) + text.slice(tagMatch.index! + tagMatch[0].length)).trim();
   }
 
   let dueAt: string | null = null;
-  const found = findDate(text, dateLanguage());
+  let duePast = false;
+  const now = new Date();
+  const found = findDate(text, dateLanguage(), now);
   if (found) {
     dueAt = found.date.toISOString();
+    duePast = isPastOnEntry(found, now);
     text = (text.slice(0, found.index) + text.slice(found.index + found.text.length))
       .replace(/\s{2,}/g, " ")
       .trim();
   }
 
-  return { text, topic, dueAt, notes };
+  return { text, category, dueAt, notes, duePast };
 }
 
 /** Split a quick-add line at its " //" note separator. */
@@ -58,8 +63,30 @@ export function splitNote(input: string): { text: string; notes: string | null }
   };
 }
 
+/**
+ * True when a due date was already over the moment it was typed — an
+ * earlier day, or a time today that has passed ("today 9am" at 17:00).
+ * Almost always a typo (wrong year or day in a full date), so the previews
+ * warn; saving stays allowed. Decided from the parse result, not the ISO
+ * string: without a typed time chrono fills in the current clock time for
+ * "today" and "yesterday" and noon for other days, so only the calendar day
+ * is compared then — a plain "today" is fine, "yesterday" is not.
+ */
+export function isPastOnEntry(found: FoundDate, now: Date): boolean {
+  if (found.timeKnown) return found.date.getTime() < now.getTime();
+  return new Date(found.date).setHours(0, 0, 0, 0) < new Date(now).setHours(0, 0, 0, 0);
+}
+
+/** A due date typed by hand (quick-add or the D editor), with the typo nudge. */
+export function parseDueEntry(input: string): { dueAt: string; past: boolean } | null {
+  const now = new Date();
+  const found = findDate(input, dateLanguage(), now);
+  if (!found) return null;
+  return { dueAt: found.date.toISOString(), past: isPastOnEntry(found, now) };
+}
+
 export function parseDueDate(input: string): string | null {
-  return findDate(input, dateLanguage())?.date.toISOString() ?? null;
+  return parseDueEntry(input)?.dueAt ?? null;
 }
 
 /** Language that due dates are typed in: the tray setting, or with
@@ -91,6 +118,14 @@ export function formatDue(iso: string | null): string {
       })
     : "";
   return date + time;
+}
+
+/** Split note text into plain segments and clickable https?:// links. */
+export function linkify(text: string): { link: boolean; value: string }[] {
+  return text
+    .split(/(https?:\/\/\S+)/g)
+    .filter((part) => part !== "")
+    .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
 }
 
 export function isOverdue(iso: string | null): boolean {

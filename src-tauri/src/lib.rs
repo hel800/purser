@@ -12,6 +12,9 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+#[cfg(test)]
+mod tests;
+
 const DEFAULT_QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
 const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
 
@@ -136,6 +139,16 @@ struct SheetOwner(Mutex<Option<String>>);
 /// of silently disappearing.
 struct Capturing(AtomicBool);
 
+/// True while the full-size view's print dialog is open. The dialog takes
+/// focus from the view, which must not hide (as it would on any other blur)
+/// or the dialog disappears with it.
+struct Printing(AtomicBool);
+
+/// The view and filters handed from the popup to the full-size view. Kept
+/// here for the view to pull, since an event sent before its webview has
+/// mounted (L right after startup) would be lost.
+struct ListState(Mutex<serde_json::Value>);
+
 /// True from opening the import file dialog until the popup webview reports
 /// the import finished, so a second menu click can't start a parallel one.
 struct Importing(AtomicBool);
@@ -161,19 +174,42 @@ fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 
 /// Returns the stored settings and whether this is the first run.
 fn load_settings(app: &AppHandle) -> (Settings, bool) {
-    let Some(path) = settings_path(app) else {
-        return (Settings::default(), false);
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(raw) => (serde_json::from_str(&raw).unwrap_or_default(), false),
+    match settings_path(app) {
+        Some(path) => read_settings_file(&path),
+        None => (Settings::default(), false),
+    }
+}
+
+/// Reads `path`; a missing file means the first run.
+///
+/// A broken `settings.json` would otherwise be silently replaced by defaults
+/// on the next save — the user's choices gone without a word. Instead, log
+/// the parse error and move the file aside to `settings.json.bak` so the
+/// original is still recoverable.
+fn read_settings_file(path: &std::path::Path) -> (Settings, bool) {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => match serde_json::from_str(&raw) {
+            Ok(settings) => (settings, false),
+            Err(e) => {
+                eprintln!("settings.json unreadable ({e}); backing up to settings.json.bak and starting with defaults");
+                let bak = path.with_file_name("settings.json.bak");
+                if let Err(e) = std::fs::rename(path, &bak) {
+                    eprintln!("could not back up settings.json: {e}");
+                }
+                (Settings::default(), false)
+            }
+        },
         Err(_) => (Settings::default(), true),
     }
 }
 
 fn save_settings(app: &AppHandle, settings: &Settings) {
-    let Some(path) = settings_path(app) else {
-        return;
-    };
+    if let Some(path) = settings_path(app) {
+        write_settings_file(&path, settings);
+    }
+}
+
+fn write_settings_file(path: &std::path::Path, settings: &Settings) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -309,16 +345,19 @@ fn toggle_quick_add(app: &AppHandle) {
     }
 }
 
-/// Bottom-right of the primary monitor's work area — directly above the
-/// clock, clear of the taskbar and never spilling onto another monitor.
-/// (The tray with the clock lives on the primary monitor on Windows.)
-fn position_popup(win: &WebviewWindow) {
-    let monitor = win
-        .primary_monitor()
+/// The monitor the popup lives on: the primary one, since the tray with the
+/// clock is on the primary monitor on Windows. The full list opens there too.
+fn popup_monitor(win: &WebviewWindow) -> Option<tauri::Monitor> {
+    win.primary_monitor()
         .ok()
         .flatten()
-        .or_else(|| win.current_monitor().ok().flatten());
-    let (Some(monitor), Ok(size)) = (monitor, win.outer_size()) else {
+        .or_else(|| win.current_monitor().ok().flatten())
+}
+
+/// Bottom-right of the popup monitor's work area — directly above the
+/// clock, clear of the taskbar and never spilling onto another monitor.
+fn position_popup(win: &WebviewWindow) {
+    let (Some(monitor), Ok(size)) = (popup_monitor(win), win.outer_size()) else {
         return;
     };
     let wa = monitor.work_area();
@@ -345,6 +384,78 @@ fn toggle_popup(app: &AppHandle) {
             show_popup(&win);
         }
     }
+}
+
+/// Swaps the small popup for the full-size view: the same list, view-only,
+/// covering the popup monitor's work area. `state` (view and filters, or
+/// null for a fresh Open view) is handed over so it feels like one window.
+fn show_list(app: &AppHandle, state: serde_json::Value) {
+    let Some(win) = app.get_webview_window("list") else {
+        return;
+    };
+    end_print_inner(app);
+    if let Some(monitor) = popup_monitor(&win) {
+        let area = monitor.work_area();
+        let _ = win.set_position(area.position);
+        let _ = win.set_size(area.size);
+    }
+    *app.state::<ListState>().0.lock().unwrap() = state;
+    // tells a mounted view to pull the new state (see `list_state`)
+    let _ = win.emit("purser://list-state", ());
+    let _ = win.show();
+    let _ = win.set_focus();
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.hide();
+    }
+}
+
+/// Back from the full-size view to the small popup, keeping view and filters.
+fn hide_list(app: &AppHandle, state: serde_json::Value) {
+    end_print_inner(app);
+    if let Some(win) = app.get_webview_window("list") {
+        let _ = win.hide();
+    }
+    if let Some(popup) = app.get_webview_window("popup") {
+        position_popup(&popup);
+        let _ = popup.show();
+        let _ = popup.set_focus();
+        let _ = popup.emit("purser://refresh", state);
+    }
+}
+
+#[tauri::command]
+fn open_list(app: AppHandle, state: serde_json::Value) {
+    show_list(&app, state);
+}
+
+/// The state last handed to the full-size view, or null for a fresh Open view.
+#[tauri::command]
+fn list_state(state: tauri::State<'_, ListState>) -> serde_json::Value {
+    state.0.lock().unwrap().clone()
+}
+
+/// Called right before `window.print()`; cleared when the view regains focus
+/// after the dialog closes (see `on_window_event`).
+#[tauri::command]
+fn begin_print(app: AppHandle) {
+    app.state::<Printing>().0.store(true, Ordering::Relaxed);
+}
+
+/// Called once `window.print()` returns. If no dialog ever took focus (print
+/// failed, no printer…), the focus-gain that normally clears the flag never
+/// comes, and the next real blur would leave the view on top of everything.
+#[tauri::command]
+fn end_print(app: AppHandle) {
+    end_print_inner(&app);
+}
+
+fn end_print_inner(app: &AppHandle) {
+    app.state::<Printing>().0.store(false, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn close_list(app: AppHandle, state: serde_json::Value) {
+    hide_list(&app, state);
 }
 
 /// Payload of `purser://import`: the decoded file content, parsed and
@@ -382,7 +493,10 @@ fn start_import(app: &AppHandle) {
             let path = picked.and_then(|p| p.into_path().ok());
             match path {
                 Some(path) => import_path(&handle, &path),
-                None => handle.state::<Importing>().0.store(false, Ordering::Relaxed),
+                None => handle
+                    .state::<Importing>()
+                    .0
+                    .store(false, Ordering::Relaxed),
             }
         });
 }
@@ -437,7 +551,9 @@ fn watch_import_ack(app: &AppHandle, generation: u32, file_name: String) {
             show_import_message(
                 &handle,
                 MessageDialogKind::Error,
-                format!("Could not import {file_name}: the import did not start. Please try again."),
+                format!(
+                    "Could not import {file_name}: the import did not start. Please try again."
+                ),
             );
         }
     });
@@ -446,7 +562,9 @@ fn watch_import_ack(app: &AppHandle, generation: u32, file_name: String) {
 /// The popup webview received the import request (see `ImportAck`).
 #[tauri::command]
 fn import_started(app: AppHandle) {
-    app.state::<ImportAck>().acked.store(true, Ordering::Relaxed);
+    app.state::<ImportAck>()
+        .acked
+        .store(true, Ordering::Relaxed);
 }
 
 /// Returns (is_csv, decoded text) or a user-facing reason why the file
@@ -497,7 +615,8 @@ const CP1252_HIGH: [char; 32] = [
 /// 0x80–0x9F, where the euro sign, dashes and typographic quotes live.
 fn decode_text(bytes: &[u8]) -> String {
     let utf16 = |rest: &[u8], from: fn([u8; 2]) -> u16| {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| from([c[0], c[1]])).collect();
+        // a trailing odd byte is dropped, as with chunks_exact
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| from(c)).collect();
         String::from_utf16_lossy(&units)
     };
     match bytes {
@@ -563,7 +682,10 @@ fn import_finished(
         ),
         None => (
             MessageDialogKind::Info,
-            format!("Imported {} from {file_name}.", plural(imported, "todo", "todos")),
+            format!(
+                "Imported {} from {file_name}.",
+                plural(imported, "todo", "todos")
+            ),
         ),
     };
     if error.is_some() && imported > 0 {
@@ -576,7 +698,11 @@ fn import_finished(
         text.push_str(&format!(
             "\n\n{} not imported because {} already.",
             plural(duplicates, "todo was", "todos were"),
-            if duplicates == 1 { "it exists" } else { "they exist" }
+            if duplicates == 1 {
+                "it exists"
+            } else {
+                "they exist"
+            }
         ));
     }
     if skipped > 0 {
@@ -626,8 +752,17 @@ struct UpdateInfo {
 fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     use tauri_plugin_updater::UpdaterExt;
 
+    // Tauri builds the windows from tauri.conf.json right before it runs our
+    // setup() hook, so the popup webview is already loading while setup() is
+    // still reading settings.json. `check_update` is async and runs on the
+    // tokio pool without waiting for the main thread, so its first call can
+    // arrive before `app.manage(Mutex::new(settings))` (seen in `tauri dev`,
+    // where Vite serves the page hot). `try_state` turns that into a plain
+    // command error, which the popup swallows for automatic checks and
+    // retries, instead of a panic on the tokio worker.
     let endpoint = app
-        .state::<Mutex<Settings>>()
+        .try_state::<Mutex<Settings>>()
+        .ok_or_else(|| "the app is still starting".to_string())?
         .lock()
         .unwrap()
         .update_endpoint
@@ -657,7 +792,12 @@ async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
     let info = update.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
     });
-    *app.state::<PendingUpdate>().0.lock().unwrap() = update;
+    // managed a few lines after Settings in setup(); same race, same answer
+    *app.try_state::<PendingUpdate>()
+        .ok_or_else(|| "the app is still starting".to_string())?
+        .0
+        .lock()
+        .unwrap() = update;
     Ok(info)
 }
 
@@ -770,8 +910,14 @@ fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), Stri
     let settings_state = app.state::<Mutex<Settings>>();
     let mut settings = settings_state.lock().unwrap();
     let (old_raw, other_raw) = match id.as_str() {
-        "quick_add" => (settings.quick_add_shortcut.clone(), settings.list_shortcut.clone()),
-        "list" => (settings.list_shortcut.clone(), settings.quick_add_shortcut.clone()),
+        "quick_add" => (
+            settings.quick_add_shortcut.clone(),
+            settings.list_shortcut.clone(),
+        ),
+        "list" => (
+            settings.list_shortcut.clone(),
+            settings.quick_add_shortcut.clone(),
+        ),
         _ => return Err("Unknown shortcut id.".into()),
     };
     // compare parsed values, not strings, so "alt+ctrl+n" == "ctrl+alt+n"
@@ -806,7 +952,10 @@ fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), Stri
         if let Err(revert_err) = register_both(&app) {
             let _ = app.emit(
                 "purser://shortcut-error",
-                format!("Restoring {} also failed: {revert_err}", pretty_shortcut(&old_raw)),
+                format!(
+                    "Restoring {} also failed: {revert_err}",
+                    pretty_shortcut(&old_raw)
+                ),
             );
         }
         return Err(e);
@@ -889,6 +1038,11 @@ pub fn run() {
             end_capture,
             open_about,
             open_help,
+            open_list,
+            list_state,
+            close_list,
+            begin_print,
+            end_print,
             close_help,
             open_import,
             confirm_import,
@@ -908,6 +1062,8 @@ pub fn run() {
             app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
+            app.manage(Printing(AtomicBool::new(false)));
+            app.manage(ListState(Mutex::new(serde_json::Value::Null)));
             app.manage(Importing(AtomicBool::new(false)));
             app.manage(ImportAck {
                 generation: AtomicU32::new(0),
@@ -1026,7 +1182,12 @@ pub fn run() {
                     app,
                     "Settings",
                     true,
-                    &[&autostart_item, &hour24_item, &auto_update_item, &date_language_menu],
+                    &[
+                        &autostart_item,
+                        &hour24_item,
+                        &auto_update_item,
+                        &date_language_menu,
+                    ],
                 )?;
 
                 let add_text = format!(
@@ -1034,19 +1195,25 @@ pub fn run() {
                     pretty_shortcut(&settings.quick_add_shortcut)
                 );
                 let list_text = format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut));
-                
 
                 let menu = Menu::with_items(
                     app,
                     &[
                         &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
                         &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
+                        &MenuItem::with_id(app, "fulllist", "Show full list", true, None::<&str>)?,
                         &MenuItem::with_id(app, "import", "Import todos…", true, None::<&str>)?,
                         &settings_menu,
                         &PredefinedMenuItem::separator(app)?,
                         &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
                         &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?,
+                        &MenuItem::with_id(
+                            app,
+                            "update",
+                            "Check for updates…",
+                            true,
+                            None::<&str>,
+                        )?,
                         &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
                     ],
                 )?;
@@ -1072,6 +1239,7 @@ pub fn run() {
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "add" => toggle_quick_add(app),
                         "list" => toggle_popup(app),
+                        "fulllist" => show_list(app, serde_json::Value::Null),
                         "import" => start_import(app),
                         "autostart" => {
                             // the click already flipped the checkbox; apply it
@@ -1125,8 +1293,14 @@ pub fn run() {
 
                 // keep refs so the tray accelerator text can be refreshed
                 *app.state::<TrayShortcutItems>().0.lock().unwrap() = Some((
-                    menu.get("add").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
-                    menu.get("list").ok_or("missing tray item")?.as_menuitem_unchecked().clone(),
+                    menu.get("add")
+                        .ok_or("missing tray item")?
+                        .as_menuitem_unchecked()
+                        .clone(),
+                    menu.get("list")
+                        .ok_or("missing tray item")?
+                        .as_menuitem_unchecked()
+                        .clone(),
                 ));
 
                 let args: Vec<String> = std::env::args().skip(1).collect();
@@ -1142,9 +1316,19 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::Focused(true) if window.label() == "list" => {
+                // back from the print dialog (or any other return): blur hides again
+                window
+                    .app_handle()
+                    .state::<Printing>()
+                    .0
+                    .store(false, Ordering::Relaxed);
+            }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "help" {
+                if window.label() == "list" && app.state::<Printing>().0.load(Ordering::Relaxed) {
+                    // the print dialog took focus — keep the view open under it
+                } else if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
                         // recording lost focus — most likely the combo is
                         // owned by another app and just triggered it. Keep

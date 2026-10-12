@@ -17,23 +17,30 @@ check. Tray menu → **Check for updates…** looks right away.
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+Alt+N` | Quick-add popup (global) |
-| `Ctrl+Alt+L` | Todo list popup above the tray/clock (global) |
+| `Ctrl+Alt+N` | Quick-add popup (global, remappable) |
+| `Ctrl+Alt+L` | Todo list popup above the tray/clock (global, remappable) |
 | `Enter` | Quick-add: save · List: tick selected todo (moves it to Done) |
 | `Tab` / `→` | Quick-add: accept the inline category suggestion |
 | `Ctrl+⌫` | Quick-add: clear the input |
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
 | `E` or `F2` | Edit the text of the selected open todo |
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
+| `C` | Change the category of the selected open todo |
 | `Space` | Show/hide the notes of the selected todo |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `T` | Cycle the category filter (all → each category → no category) |
 | `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
 | `Del` | Done view: delete permanently |
+| `L` | Toggle between the small popup and the full-size view |
+| `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
+| `U` | Install the offered update (when the update banner is showing) |
+| `?` / `F1` | Open the keyboard-shortcuts sheet (also remaps the two global shortcuts) |
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
+The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
+(`?` or `F1`); the sheet records the next combination you press.
 
 ### Settings (tray menu → Settings)
 
@@ -123,6 +130,11 @@ categories are never changed. Examples live in [`samples/import`](samples/import
 - Hover a todo row for pencils to edit its text and due date by mouse
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
   next working day before 12:00
+- A due date that is already over as you type it — a full date with the wrong
+  year or day, `today 9am` in the afternoon, `yesterday` — is shown in red
+  with "in the past" in the quick-add chip and the `D` editor's preview. It is
+  only a nudge for a likely typo: saving works as usual. A plain `today` is
+  fine
 
 ### Notes
 
@@ -132,6 +144,26 @@ categories are never changed. Examples live in [`samples/import`](samples/import
   clickable and open in the browser. `N` (or the pencil in the panel) edits;
   `Ctrl+Enter` saves, saving an empty note removes it. Done view shows notes
   read-only.
+
+### Full-size view
+
+For the big picture, press `L` in the popup (or pick **Show full list** in the
+tray menu). The list grows to fill the screen it's on, keeping the current
+view and filters, and shows every todo with its full text and notes. `L` or
+`Esc` shrinks it back to the small popup; like the popup, it also hides when
+you click elsewhere.
+
+- View only, as the pill at the top says: nothing here changes your todos.
+  Go back to the small popup to edit. Pressing an edit key (`Enter`, `E`,
+  `D`, `C`, `N`, `Del`) or clicking a todo's circle briefly shows
+  "View only — press L to edit". Edits from quick-add show up right away
+- `Tab`, `T` and `F` switch views and filters just like in the popup
+- Scroll with the mouse wheel, `↑` / `↓` (or `j` / `k`), `PgUp` / `PgDn`,
+  `Space` and `Home` / `End`
+- `Ctrl+P` (or the **Print** button) prints the current view, or saves it as
+  PDF, with its filters as heading. Overdue and soon-due todos are marked in
+  text, so the printout works in black and white. The browser's own header
+  and footer (date, URL) are left out, whatever the print dialog says
 
 ## Data
 
@@ -163,10 +195,39 @@ running instance.
 ```
 npm install
 npm run tauri dev      # run with hot reload
+npm run check          # svelte-check: type-check .svelte and .ts files
+npm test               # vitest: unit tests for the parsers (src/lib/*.test.ts)
 npm run tauri build    # produce NSIS installer (Windows)
 ```
 
-Requires Rust (MSVC toolchain on Windows) and Node.
+Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 22).
+
+Main only takes pull requests, and every pull request must pass the `CI`
+workflow before it can be merged. It runs on Windows and Linux:
+
+```
+npm run check
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+cargo build --manifest-path src-tauri/Cargo.toml --locked
+cargo test --lib --manifest-path src-tauri/Cargo.toml --locked
+```
+
+Run `cargo fmt --manifest-path src-tauri/Cargo.toml` before committing; clippy
+warnings are errors in CI. The installer is only built by the `release`
+workflow (see below).
+
+**Tests.** Frontend unit tests sit next to the module they cover
+(`src/lib/parse.test.ts` tests `src/lib/parse.ts`) and run with vitest:
+`npm test`, `npm run test:watch`, or one file with
+`npx vitest run src/lib/import.test.ts`. The import tests read the files in
+`samples/import`. Rust unit tests live in `src-tauri/src/tests.rs`:
+`cargo test --lib --manifest-path src-tauri/Cargo.toml`, one test with
+`… -- read_settings_file`. Date tests run in `Europe/Berlin` (set in
+`vitest.config.ts`) with the clock frozen at Sun 11 Oct 2026 13:02:05 via
+`freezeAt`, so results do not depend on the machine's zone or the weekday.
 
 ### Releasing
 

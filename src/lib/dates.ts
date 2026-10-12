@@ -10,6 +10,9 @@ export interface FoundDate {
   index: number;
   text: string;
   date: Date;
+  /** whether a time of day was typed; without one chrono fills in noon
+   *  (or the current time for "today") */
+  timeKnown: boolean;
 }
 
 /**
@@ -20,7 +23,8 @@ export interface FoundDate {
 export function findDate(text: string, language: DateLanguage, ref: Date = new Date()): FoundDate | null {
   const parser = language === "de" ? german : english;
   const [first] = parser.parse(text, ref, { forwardDate: true });
-  return first ? { index: first.index, text: first.text, date: first.date() } : null;
+  if (!first) return null;
+  return { index: first.index, text: first.text, date: first.date(), timeKnown: first.start.isCertain("hour") };
 }
 
 // A date expression must not end inside a word or a number ("20261223x").
