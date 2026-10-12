@@ -4,7 +4,7 @@
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { parseTodo, formatDue } from "./lib/parse";
+  import { TAG_CHARS, parseTodo, formatDue } from "./lib/parse";
   import { addTodo, listCategories, type Category } from "./lib/db";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
@@ -17,6 +17,8 @@
   let active = $state(0);
   let suppressSuggest = $state(false);
   let parsed = $derived(parseTodo(value));
+
+  const PARTIAL_TAG = new RegExp(`^${TAG_CHARS}*$`, "u");
 
   // Mirror the textarea's caret into state. Fired on input, clicks and
   // Home/End/arrow moves (selectionchange) — everything downstream (tag,
@@ -41,7 +43,7 @@
     const hash = before.lastIndexOf("#");
     if (hash === -1) return null;
     const partial = before.slice(hash + 1);
-    if (!/^[\p{L}\p{N}_-]*$/u.test(partial)) return null;
+    if (!PARTIAL_TAG.test(partial)) return null;
     return { start: hash, partial };
   });
 
