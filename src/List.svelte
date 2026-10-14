@@ -395,31 +395,6 @@
     height: 100vh;
     border: 1px solid var(--border);
   }
-  header {
-    display: flex;
-    gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    align-items: center;
-  }
-  .tab {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-weight: 600;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .tab.active {
-    color: var(--text);
-    border-bottom: 2px solid var(--accent);
-  }
-  header .hint {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 400;
-  }
   /* the one place that says this list can't be edited — a dashed pill,
      clickable as the way back to the editable popup */
   .view-only {
@@ -480,13 +455,6 @@
     min-height: 34px;
     line-height: 1;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-top: 1px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
   .todo {
     padding: 7px 14px;
   }
@@ -528,88 +496,17 @@
   /* same panel as the popup's expanded notes, always open */
   .notes {
     margin: 4px 0 0 20px;
-    padding: 6px 10px;
-    background: var(--bg-raised);
-    border-left: 2px solid var(--border);
-    border-radius: 0 4px 4px 0;
-    font-size: 12px;
-    color: var(--text-dim);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: text;
   }
   .link {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    color: var(--accent);
-    cursor: pointer;
-    text-decoration: underline;
-    text-align: left;
-    overflow-wrap: anywhere;
     user-select: text;
   }
   .empty {
     color: var(--text-dim);
     text-align: center;
     padding: 30px 0;
-  }
-  footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 14px;
-    font-size: 11px;
-    color: var(--text-dim);
-    border-top: 1px solid var(--border);
-  }
-  .hints {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px 12px;
-    align-items: center;
-  }
-  .hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-  }
-  kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .footer-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .small-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0 7px;
-    font: inherit;
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .small-btn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
   }
   .wordmark {
     height: 9px;

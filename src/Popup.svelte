@@ -264,12 +264,7 @@
         dueFilter = state.dueFilter;
       }
       filterMenu = null;
-      selected = 0;
-      editing = null;
-      catEdit = null;
-      catMenu = null;
-      notesOpenId = null;
-      notesEdit = null;
+      resetUi();
     });
     // imports run here (this webview is always loaded); the backend shows
     // the result and then opens the list, which refreshes it
@@ -332,6 +327,11 @@
     const data = v === "open" ? await openTodos() : await doneTodos();
     view = v;
     todos = data;
+    resetUi();
+  }
+
+  /** Back to the top of a freshly loaded list, with no edit, menu or notes open. */
+  function resetUi() {
     selected = 0;
     editing = null;
     catEdit = null;
@@ -566,14 +566,6 @@
     catMenuValue += catMenuGhost;
   }
 
-  function menuScrollIntoView(node: HTMLElement, active: boolean) {
-    function update(a: boolean) {
-      if (a) node.scrollIntoView({ block: "nearest" });
-    }
-    update(active);
-    return { update };
-  }
-
   let printToast = $state<Toast>();
 
   // the small popup would print only its visible rows: point to the
@@ -714,11 +706,12 @@
     }
   }
 
-  function scrollSelectedIntoView(node: HTMLElement, isSelected: boolean) {
-    function update(sel: boolean) {
-      if (sel) node.scrollIntoView({ block: "nearest" });
+  /** Svelte action: keeps the node scrolled into view while `active` is true. */
+  function scrollIntoViewWhen(node: HTMLElement, active: boolean) {
+    function update(isActive: boolean) {
+      if (isActive) node.scrollIntoView({ block: "nearest" });
     }
-    update(isSelected);
+    update(active);
     return { update };
   }
 </script>
@@ -823,7 +816,7 @@
           class:selected={idx === selected}
           class:leaving-right={leaving?.id === todo.id && leaving.dir === "right"}
           class:leaving-left={leaving?.id === todo.id && leaving.dir === "left"}
-          use:scrollSelectedIntoView={idx === selected}
+          use:scrollIntoViewWhen={idx === selected}
           onclick={() => (selected = idx)}
           role="option"
           aria-selected={idx === selected}
@@ -933,7 +926,6 @@
           <div class="notes" transition:slide={{ duration: 150 }}>
             {#if notesEdit?.id === todo.id}
               <span class="notes-editor" onfocusout={onNotesFocusout}>
-                <!-- svelte-ignore a11y_autofocus -->
                 <textarea
                   class="notes-input"
                   bind:value={notesEdit.value}
@@ -990,8 +982,8 @@
       <span class="hint"><kbd>Esc</kbd> close</span>
     </span>
     <span class="footer-actions">
-      <button class="help-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
-      <button class="help-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
+      <button class="small-btn" onclick={openImport} title="Import todos from a .txt or .csv file…">⇧</button>
+      <button class="small-btn" onclick={openHelp} title="Keyboard shortcuts (? / F1)">?</button>
       <button class="wordmark-btn" onclick={openAbout} title="About Purser">
         <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
       </button>
@@ -1039,7 +1031,7 @@
             aria-selected={catMenuActive === i + 1}
             tabindex="-1"
             bind:this={catMenuRows[i]}
-            use:menuScrollIntoView={catMenuActive === i + 1}
+            use:scrollIntoViewWhen={catMenuActive === i + 1}
             onclick={() => catMenuChoose(i + 1)}
             onkeydown={() => {}}
             onmousemove={() => (catMenuActive = i + 1)}
@@ -1065,31 +1057,6 @@
     flex-direction: column;
     height: 100vh;
     border: 1px solid var(--border);
-  }
-  header {
-    display: flex;
-    gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    align-items: center;
-  }
-  .tab {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-weight: 600;
-    color: var(--text-dim);
-    cursor: pointer;
-  }
-  .tab.active {
-    color: var(--text);
-    border-bottom: 2px solid var(--accent);
-  }
-  header .hint {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 400;
   }
   .update {
     display: flex;
@@ -1172,13 +1139,6 @@
   }
   h2 .pen:hover {
     opacity: 1;
-  }
-  .dot {
-    width: 8px;
-    height: 8px;
-    margin-top: 1px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
   .cat-edit {
     background: var(--bg);
@@ -1501,12 +1461,6 @@
     align-items: flex-start;
     gap: 6px;
     margin: -2px 14px 6px 34px;
-    padding: 6px 10px;
-    background: var(--bg-raised);
-    border-left: 2px solid var(--border);
-    border-radius: 0 4px 4px 0;
-    font-size: 12px;
-    color: var(--text-dim);
   }
   .notes-text {
     flex: 1;
@@ -1515,17 +1469,6 @@
     overflow-wrap: anywhere;
     max-height: 8em;
     overflow-y: auto;
-  }
-  .link {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    color: var(--accent);
-    cursor: pointer;
-    text-decoration: underline;
-    text-align: left;
-    overflow-wrap: anywhere;
   }
   .notes .pen {
     opacity: 0.4;
@@ -1582,43 +1525,6 @@
     text-align: center;
     padding: 30px 0;
   }
-  footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 8px 14px;
-    font-size: 11px;
-    color: var(--text-dim);
-    border-top: 1px solid var(--border);
-  }
-  .hints {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px 12px;
-    align-items: center;
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-  .hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-  }
-  kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--text);
-    white-space: nowrap;
-  }
   .wordmark-btn {
     background: none;
     border: none;
@@ -1626,28 +1532,6 @@
     flex-shrink: 0;
     line-height: 0;
     cursor: pointer;
-  }
-  .footer-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-  .help-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0 7px;
-    font: inherit;
-    font-size: 12px;
-    line-height: 16px;
-    color: var(--text-dim);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .help-btn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
   }
   .wordmark {
     height: 9px;

@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import Logo from "./lib/Logo.svelte";
   import { initSettings, settings } from "./lib/settings.svelte";
 
-  let recording: "quick_add" | "list" | null = null;
-  let error: string | null = null;
-  let unlisteners: UnlistenFn[] = [];
+  let recording = $state<"quick_add" | "list" | null>(null);
+  let error = $state<string | null>(null);
 
   onMount(() => {
+    const unlisteners: UnlistenFn[] = [];
     initSettings();
     listen<string>("purser://shortcut-error", (e) => {
       error = e.payload;
@@ -30,10 +30,7 @@
         }
       })
       .then((fn) => unlisteners.push(fn));
-  });
-
-  onDestroy(() => {
-    unlisteners.forEach((fn) => fn());
+    return () => unlisteners.forEach((fn) => fn());
   });
 
   function close() {
@@ -302,18 +299,6 @@
     flex: 0 0 auto;
     min-width: 120px;
     font-size: 11px;
-    white-space: nowrap;
-  }
-  kbd {
-    display: inline-block;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-family: inherit;
-    font-size: 11px;
-    color: var(--text);
     white-space: nowrap;
   }
   /* pencil next to the shortcut, as in the todo list; while recording the

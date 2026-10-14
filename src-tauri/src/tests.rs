@@ -99,6 +99,13 @@ fn settings_dto_adds_display_shortcuts() {
     assert_eq!(dto.list_pretty, "Ctrl+Alt+L");
 }
 
+#[test]
+fn tray_shortcut_labels_show_the_shortcuts_as_accelerator_text() {
+    let (add, list) = tray_shortcut_labels(&Settings::default());
+    assert_eq!(add, "Add todo\tCtrl+Alt+N");
+    assert_eq!(list, "Show todos\tCtrl+Alt+L");
+}
+
 // settings file
 
 #[test]

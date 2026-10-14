@@ -6,15 +6,9 @@
   "permissions": [
     "core:default",
     "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-center",
-    "core:window:allow-set-focus",
     "core:window:allow-set-size",
     "sql:default",
-    "sql:allow-load",
-    "sql:allow-select",
     "sql:allow-execute",
-    "autostart:default",
     "opener:default"
   ]
 }

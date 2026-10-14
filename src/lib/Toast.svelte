@@ -45,16 +45,8 @@
     pointer-events: none;
   }
   .toast :global(kbd) {
-    display: inline-block;
     background: var(--bg);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: 4px;
     padding: 0 5px;
-    font-family: inherit;
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--text);
   }
   @media print {
     .toast {
