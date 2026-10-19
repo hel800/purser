@@ -199,7 +199,7 @@
 
     <section>
       <h2>Todo list</h2>
-      <div class="row"><span class="keys"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>j</kbd> <kbd>k</kbd></span>Navigate</div>
+      <div class="row"><span class="keys"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>J</kbd> <kbd>K</kbd></span>Navigate</div>
       <div class="row"><span class="keys"><kbd>Enter</kbd></span>Mark selected as done</div>
       <div class="row"><span class="keys"><kbd>Tab</kbd></span>Switch between Open and Done</div>
       <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span>Edit text</div>
