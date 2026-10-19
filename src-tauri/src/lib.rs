@@ -43,54 +43,34 @@ fn taskbar_is_light() -> bool {
     false
 }
 
+/// Fields missing from settings.json fall back to `Settings::default()`.
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 struct Settings {
-    #[serde(default = "default_true")]
     hour24: bool,
     /// Look for a newer release at startup, daily and when the popup opens.
     /// On by default; the tray's "Check for updates…" works regardless.
-    #[serde(default = "default_true")]
     auto_update_check: bool,
-    #[serde(default = "default_quick_add_shortcut")]
     quick_add_shortcut: String,
-    #[serde(default = "default_list_shortcut")]
     list_shortcut: String,
     /// Language due dates are typed in: "auto" (the Windows display
     /// language), "en" or "de".
-    #[serde(default = "default_date_language")]
     date_language: String,
     /// Where to look for `latest.json` instead of the latest GitHub release.
     /// Not exposed in the UI: a hand-edited settings.json entry for testing
     /// pre-releases, e.g. `https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     update_endpoint: Option<String>,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_quick_add_shortcut() -> String {
-    DEFAULT_QUICK_ADD_SHORTCUT.into()
-}
-
-fn default_list_shortcut() -> String {
-    DEFAULT_LIST_SHORTCUT.into()
-}
-
-fn default_date_language() -> String {
-    "auto".into()
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            hour24: default_true(),
-            auto_update_check: default_true(),
-            quick_add_shortcut: default_quick_add_shortcut(),
-            list_shortcut: default_list_shortcut(),
-            date_language: default_date_language(),
+            hour24: true,
+            auto_update_check: true,
+            quick_add_shortcut: DEFAULT_QUICK_ADD_SHORTCUT.into(),
+            list_shortcut: DEFAULT_LIST_SHORTCUT.into(),
+            date_language: "auto".into(),
             update_endpoint: None,
         }
     }
@@ -880,20 +860,27 @@ fn pretty_shortcut(combo: &str) -> String {
         .join("+")
 }
 
+/// Texts of the tray's "Add todo" and "Show todos" items, with the current
+/// shortcut as the right-aligned accelerator text.
+fn tray_shortcut_labels(settings: &Settings) -> (String, String) {
+    (
+        format!(
+            "Add todo\t{}",
+            pretty_shortcut(&settings.quick_add_shortcut)
+        ),
+        format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut)),
+    )
+}
+
 fn set_tray_shortcut_labels(app: &AppHandle, settings: &Settings) {
     let state = app.state::<TrayShortcutItems>();
     let items = state.0.lock().unwrap();
     let Some((add, list)) = items.as_ref() else {
         return;
     };
-    let _ = add.set_text(format!(
-        "Add todo\t{}",
-        pretty_shortcut(&settings.quick_add_shortcut)
-    ));
-    let _ = list.set_text(format!(
-        "Show todos\t{}",
-        pretty_shortcut(&settings.list_shortcut)
-    ));
+    let (add_text, list_text) = tray_shortcut_labels(settings);
+    let _ = add.set_text(add_text);
+    let _ = list.set_text(list_text);
 }
 
 /// Replaces one of the two global shortcuts: validates the combo, persists
@@ -1190,11 +1177,7 @@ pub fn run() {
                     ],
                 )?;
 
-                let add_text = format!(
-                    "Add todo\t{}",
-                    pretty_shortcut(&settings.quick_add_shortcut)
-                );
-                let list_text = format!("Show todos\t{}", pretty_shortcut(&settings.list_shortcut));
+                let (add_text, list_text) = tray_shortcut_labels(&settings);
 
                 let menu = Menu::with_items(
                     app,

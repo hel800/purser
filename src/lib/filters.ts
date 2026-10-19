@@ -65,7 +65,7 @@ export function nextDue(current: DueFilter): DueFilter {
   return DUE_CYCLE[(i + 1) % DUE_CYCLE.length];
 }
 
-export function matchesDue(t: Todo, filter: DueFilter): boolean {
+function matchesDue(t: Todo, filter: DueFilter): boolean {
   switch (filter) {
     case "all":
       return true;

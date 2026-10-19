@@ -128,10 +128,6 @@ export function linkify(text: string): { link: boolean; value: string }[] {
     .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
 }
 
-export function isOverdue(iso: string | null): boolean {
-  return iso !== null && new Date(iso).getTime() < Date.now();
-}
-
 function sameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
