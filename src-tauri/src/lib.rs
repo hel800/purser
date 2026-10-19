@@ -168,8 +168,15 @@ fn load_settings(app: &AppHandle) -> (Settings, bool) {
 /// original is still recoverable.
 fn read_settings_file(path: &std::path::Path) -> (Settings, bool) {
     match std::fs::read_to_string(path) {
-        Ok(raw) => match serde_json::from_str(&raw) {
-            Ok(settings) => (settings, false),
+        Ok(raw) => match serde_json::from_str::<Settings>(&raw) {
+            Ok(mut settings) => {
+                // A hand-edited value like "fr" would leave no tray item
+                // ticked while the frontend falls back to Automatic.
+                if !["auto", "en", "de"].contains(&settings.date_language.as_str()) {
+                    settings.date_language = "auto".into();
+                }
+                (settings, false)
+            }
             Err(e) => {
                 eprintln!("settings.json unreadable ({e}); backing up to settings.json.bak and starting with defaults");
                 let bak = path.with_file_name("settings.json.bak");
