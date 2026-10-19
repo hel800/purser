@@ -133,6 +133,15 @@ fn read_settings_file_round_trips() {
 }
 
 #[test]
+fn read_settings_file_treats_an_unknown_date_language_as_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, r#"{"dateLanguage":"fr"}"#).unwrap();
+    let (s, _) = read_settings_file(&path);
+    assert_eq!(s.date_language, "auto");
+}
+
+#[test]
 fn read_settings_file_backs_up_a_broken_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.json");

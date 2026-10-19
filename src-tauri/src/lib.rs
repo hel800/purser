@@ -53,6 +53,9 @@ struct Settings {
     auto_update_check: bool,
     quick_add_shortcut: String,
     list_shortcut: String,
+    /// Language due dates are typed in: "auto" (the Windows display
+    /// language), "en" or "de".
+    date_language: String,
     /// Where to look for `latest.json` instead of the latest GitHub release.
     /// Not exposed in the UI: a hand-edited settings.json entry for testing
     /// pre-releases, e.g. `https://github.com/hel800/purser/releases/download/v0.4.1-beta.2/latest.json`.
@@ -67,6 +70,7 @@ impl Default for Settings {
             auto_update_check: true,
             quick_add_shortcut: DEFAULT_QUICK_ADD_SHORTCUT.into(),
             list_shortcut: DEFAULT_LIST_SHORTCUT.into(),
+            date_language: "auto".into(),
             update_endpoint: None,
         }
     }
@@ -83,6 +87,7 @@ struct SettingsDto {
     list_shortcut: String,
     quick_add_pretty: String,
     list_pretty: String,
+    date_language: String,
 }
 
 impl From<&Settings> for SettingsDto {
@@ -94,6 +99,7 @@ impl From<&Settings> for SettingsDto {
             list_shortcut: s.list_shortcut.clone(),
             quick_add_pretty: pretty_shortcut(&s.quick_add_shortcut),
             list_pretty: pretty_shortcut(&s.list_shortcut),
+            date_language: s.date_language.clone(),
         }
     }
 }
@@ -162,8 +168,15 @@ fn load_settings(app: &AppHandle) -> (Settings, bool) {
 /// original is still recoverable.
 fn read_settings_file(path: &std::path::Path) -> (Settings, bool) {
     match std::fs::read_to_string(path) {
-        Ok(raw) => match serde_json::from_str(&raw) {
-            Ok(settings) => (settings, false),
+        Ok(raw) => match serde_json::from_str::<Settings>(&raw) {
+            Ok(mut settings) => {
+                // A hand-edited value like "fr" would leave no tray item
+                // ticked while the frontend falls back to Automatic.
+                if !["auto", "en", "de"].contains(&settings.date_language.as_str()) {
+                    settings.date_language = "auto".into();
+                }
+                (settings, false)
+            }
             Err(e) => {
                 eprintln!("settings.json unreadable ({e}); backing up to settings.json.bak and starting with defaults");
                 let bak = path.with_file_name("settings.json.bak");
@@ -1139,11 +1152,36 @@ pub fn run() {
                     settings.auto_update_check,
                     None::<&str>,
                 )?;
+                // three check items that behave like radio buttons
+                let date_language_item = |language: &str, label: &str| {
+                    CheckMenuItem::with_id(
+                        app,
+                        format!("date_language_{language}"),
+                        label,
+                        true,
+                        settings.date_language == language,
+                        None::<&str>,
+                    )
+                };
+                let date_auto = date_language_item("auto", "Automatic (Windows language)")?;
+                let date_en = date_language_item("en", "English")?;
+                let date_de = date_language_item("de", "Deutsch")?;
+                let date_language_menu = Submenu::with_items(
+                    app,
+                    "Date input",
+                    true,
+                    &[&date_auto, &date_en, &date_de],
+                )?;
                 let settings_menu = Submenu::with_items(
                     app,
                     "Settings",
                     true,
-                    &[&autostart_item, &hour24_item, &auto_update_item],
+                    &[
+                        &autostart_item,
+                        &hour24_item,
+                        &auto_update_item,
+                        &date_language_menu,
+                    ],
                 )?;
 
                 let (add_text, list_text) = tray_shortcut_labels(&settings);
@@ -1173,6 +1211,11 @@ pub fn run() {
                 let autostart_check = autostart_item.clone();
                 let hour24_check = hour24_item.clone();
                 let auto_update_check = auto_update_item.clone();
+                let date_language_checks = [
+                    ("auto", date_auto.clone()),
+                    ("en", date_en.clone()),
+                    ("de", date_de.clone()),
+                ];
 
                 TrayIconBuilder::with_id("main")
                     .icon(if taskbar_is_light() {
@@ -1208,6 +1251,17 @@ pub fn run() {
                         "auto_update" => {
                             let on = auto_update_check.is_checked().unwrap_or(true);
                             update_settings(app, |s| s.auto_update_check = on);
+                        }
+                        id if id.starts_with("date_language_") => {
+                            let chosen = &id["date_language_".len()..];
+                            // the click toggled only the clicked item; check
+                            // it again (a second click would uncheck it) and
+                            // uncheck the others
+                            for (language, item) in &date_language_checks {
+                                let _ = item.set_checked(*language == chosen);
+                            }
+                            let chosen = chosen.to_string();
+                            update_settings(app, |s| s.date_language = chosen);
                         }
                         "quit" => app.exit(0),
                         "help" => show_help(app, None),
