@@ -149,14 +149,29 @@ const compactIsoParser: Parser = {
   },
 };
 
-/** German "23.12." without a year: the next 23 Dec, today included. */
+/**
+ * German "23.12.": the next 23 Dec, today included. A four-digit number after
+ * it ("23.12. 2026") is the year only if it is this year or next year. Any
+ * other number is left for `compactTimeRefiner`, so "23.12. 1500" and
+ * "23.12. 2030" read as times.
+ */
 const dayMonthParser: Parser = {
-  // the year-less form only: "23.12.2026" and "23.12.26" are chrono's
-  pattern: () => new RegExp(`(\\d{1,2})\\.(\\d{1,2})\\.(?![\\p{L}\\p{N}.])`, "u"),
+  // "23.12.2026" and "23.12.26" without a space are chrono's
+  pattern: () =>
+    new RegExp(`(\\d{1,2})\\.(\\d{1,2})\\.(?![\\p{L}\\p{N}.])(?:\\s+(\\d{4})${NOT_BEFORE_WORD})?`, "u"),
   extract: (context, match) => {
     const day = Number(match[1]);
     const month = Number(match[2]);
-    return inNextYearThatFits(context, (year) => validDate(year, month, day));
+    const typedYear = match[3] ? Number(match[3]) : null;
+    const thisYear = context.refDate.getFullYear();
+    if (typedYear === thisYear || typedYear === thisYear + 1) {
+      const date = validDate(typedYear, month, day);
+      return date ? components(date) : null;
+    }
+    const yearLess = inNextYearThatFits(context, (year) => validDate(year, month, day));
+    if (!yearLess) return null;
+    const dayMonthText = `${match[1]}.${match[2]}.`;
+    return context.createParsingResult(match.index!, dayMonthText, yearLess);
   },
 };
 

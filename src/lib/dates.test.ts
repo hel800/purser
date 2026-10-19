@@ -88,6 +88,16 @@ describe("year-less dates (inNextYearThatFits)", () => {
     expect(found("31.02.", "de")).toBeNull();
     expect(found("KW 53 2027", "de")).toBeNull();
   });
+
+  it("reads a near year after a day.month as the year, other numbers as a time", () => {
+    expect(found("Bericht 23.12. 2026", "de")).toBe("2026-12-23 12:00");
+    expect(matchedText("Bericht 23.12. 2026", "de")).toBe("23.12. 2026");
+    expect(found("23.12. 2027", "de")).toBe("2027-12-23 12:00");
+    expect(found("20.09. 2026", "de")).toBe("2026-09-20 12:00"); // a typed year counts even if passed
+    expect(found("23.12. 1500", "de")).toBe("2026-12-23 15:00");
+    expect(found("23.12. 2030", "de")).toBe("2026-12-23 20:30");
+    expect(found("29.02. 2026", "de")).toBeNull();
+  });
 });
 
 describe("false positives", () => {
