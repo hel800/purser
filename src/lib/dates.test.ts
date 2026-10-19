@@ -148,6 +148,8 @@ describe("English", () => {
     ["end of October", "2026-10-31 12:00"],
     ["end October", "2026-10-31 12:00"],
     ["mid October", "2026-10-15 12:00"],
+    ["mid-October", "2026-10-15 12:00"],
+    ["end-October", "2026-10-31 12:00"],
     ["early October", "2026-10-01 12:00"],
     ["beginning of October", "2026-10-01 12:00"],
     ["coming Monday", "2026-09-28 12:00"],
@@ -157,6 +159,10 @@ describe("English", () => {
     ["next monday", "2026-09-28 12:00"],
   ])("%s -> %s", (input, expected) => {
     expect(found(input, "en")).toBe(expected);
+  });
+
+  it("keeps the hyphen in the matched text", () => {
+    expect(matchedText("mid-October report", "en")).toBe("mid-October");
   });
 
   it("reads every sample line exactly like plain chrono did before", () => {

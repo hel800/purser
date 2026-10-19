@@ -186,9 +186,10 @@ function monthPartParser(parts: Record<string, MonthPart>, months: Record<string
   // "end of" must be tried before "end", and may contain any whitespace
   const partWords = alternation(parts).replace(/ /g, "\\s+");
   return {
+    // a hyphen also separates the part from the month: "mid-October"
     pattern: () =>
       new RegExp(
-        `(${partWords})\\s+(${alternation(months)})\\.?(?:\\s+(\\d{4}))?${NOT_BEFORE_WORD}`,
+        `(${partWords})[\\s-]+(${alternation(months)})\\.?(?:\\s+(\\d{4}))?${NOT_BEFORE_WORD}`,
         "iu"
       ),
     extract: (context, match) => {
