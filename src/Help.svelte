@@ -199,44 +199,44 @@
 
     <section>
       <h2>Todo list</h2>
-      <div class="row"><span class="keys"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>j</kbd> <kbd>k</kbd></span>Navigate</div>
-      <div class="row"><span class="keys"><kbd>Enter</kbd></span>Mark selected as done</div>
-      <div class="row"><span class="keys"><kbd>Tab</kbd></span>Switch between Open and Done</div>
-      <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span>Edit text</div>
-      <div class="row"><span class="keys"><kbd>D</kbd></span>Edit due date (empty removes it)</div>
-      <div class="row"><span class="keys"><kbd>C</kbd></span>Change category</div>
-      <div class="row"><span class="keys"><kbd>Space</kbd></span>Show / hide notes</div>
-      <div class="row"><span class="keys"><kbd>N</kbd></span>Edit notes (Ctrl+Enter saves)</div>
-      <div class="row"><span class="keys"><kbd>T</kbd></span>Cycle category filter</div>
-      <div class="row"><span class="keys"><kbd>F</kbd></span>Cycle due-date filter</div>
-      <div class="row"><span class="keys"><kbd>Del</kbd></span>Delete permanently (Done view)</div>
-      <div class="row"><span class="keys"><kbd>L</kbd></span>Full-size view, view only (<kbd>Ctrl+P</kbd> prints)</div>
-      <div class="row"><span class="keys"><kbd>Esc</kbd></span>Close popup</div>
+      <div class="row"><span class="keys"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>J</kbd> <kbd>K</kbd></span><span class="label">Navigate</span></div>
+      <div class="row"><span class="keys"><kbd>Enter</kbd></span><span class="label">Mark selected as done</span></div>
+      <div class="row"><span class="keys"><kbd>Tab</kbd></span><span class="label">Switch between Open and Done</span></div>
+      <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span><span class="label">Edit text</span></div>
+      <div class="row"><span class="keys"><kbd>D</kbd></span><span class="label">Edit due date (empty removes it)</span></div>
+      <div class="row"><span class="keys"><kbd>C</kbd></span><span class="label">Change category</span></div>
+      <div class="row"><span class="keys"><kbd>Space</kbd></span><span class="label">Show / hide notes</span></div>
+      <div class="row"><span class="keys"><kbd>N</kbd></span><span class="label">Edit notes (Ctrl+Enter saves)</span></div>
+      <div class="row"><span class="keys"><kbd>T</kbd></span><span class="label">Cycle category filter</span></div>
+      <div class="row"><span class="keys"><kbd>F</kbd></span><span class="label">Cycle due-date filter</span></div>
+      <div class="row"><span class="keys"><kbd>Del</kbd></span><span class="label">Delete permanently (Done view)</span></div>
+      <div class="row"><span class="keys"><kbd>L</kbd></span><span class="label">Full-size view, view only (<kbd>Ctrl+P</kbd> prints)</span></div>
+      <div class="row"><span class="keys"><kbd>Esc</kbd></span><span class="label">Close popup</span></div>
     </section>
 
     <section>
       <h2>Quick-add</h2>
-      <div class="row"><span class="keys"><kbd>Enter</kbd></span>Save todo</div>
-      <div class="row"><span class="keys"><kbd>Tab</kbd> or <kbd>→</kbd></span>Accept category suggestion</div>
-      <div class="row"><span class="keys"><kbd>//</kbd></span>Everything after becomes a note</div>
-      <div class="row"><span class="keys"><kbd>Ctrl+⌫</kbd></span>Clear input</div>
-      <div class="row"><span class="keys"><kbd>Esc</kbd></span>Hide popup</div>
+      <div class="row"><span class="keys"><kbd>Enter</kbd></span><span class="label">Save todo</span></div>
+      <div class="row"><span class="keys"><kbd>Tab</kbd> or <kbd>→</kbd></span><span class="label">Accept category suggestion</span></div>
+      <div class="row"><span class="keys"><kbd>//</kbd></span><span class="label">Everything after becomes a note</span></div>
+      <div class="row"><span class="keys"><kbd>Ctrl+⌫</kbd></span><span class="label">Clear input</span></div>
+      <div class="row"><span class="keys"><kbd>Esc</kbd></span><span class="label">Hide popup</span></div>
     </section>
 
     <section>
       <h2>Dates</h2>
       {#if dateLanguage() === "de"}
-        <div class="row"><span class="keys"><kbd>Fr 15 Uhr</kbd></span>Weekday and time</div>
-        <div class="row"><span class="keys"><kbd>morgen</kbd> <kbd>in 2 Wochen</kbd></span>Relative</div>
-        <div class="row"><span class="keys"><kbd>Ende Oktober</kbd></span>Also Anfang, Mitte</div>
-        <div class="row"><span class="keys"><kbd>KW 44</kbd></span>Monday of calendar week 44</div>
-        <div class="row"><span class="keys"><kbd>23.12.</kbd></span>Next 23 December</div>
+        <div class="row"><span class="keys"><kbd>Fr 15 Uhr</kbd></span><span class="label">Weekday and time</span></div>
+        <div class="row"><span class="keys"><kbd>morgen</kbd> <kbd>in 2 Wochen</kbd></span><span class="label">Relative</span></div>
+        <div class="row"><span class="keys"><kbd>Ende Oktober</kbd></span><span class="label">Also Anfang, Mitte</span></div>
+        <div class="row"><span class="keys"><kbd>KW 44</kbd></span><span class="label">Monday of calendar week 44</span></div>
+        <div class="row"><span class="keys"><kbd>23.12.</kbd></span><span class="label">Next 23 December</span></div>
       {:else}
-        <div class="row"><span class="keys"><kbd>friday 5pm</kbd></span>Weekday and time</div>
-        <div class="row"><span class="keys"><kbd>tomorrow</kbd> <kbd>in 2 weeks</kbd></span>Relative</div>
-        <div class="row"><span class="keys"><kbd>end of October</kbd></span>Also early, mid</div>
+        <div class="row"><span class="keys"><kbd>friday 5pm</kbd></span><span class="label">Weekday and time</span></div>
+        <div class="row"><span class="keys"><kbd>tomorrow</kbd> <kbd>in 2 weeks</kbd></span><span class="label">Relative</span></div>
+        <div class="row"><span class="keys"><kbd>end of October</kbd></span><span class="label">Also early, mid</span></div>
       {/if}
-      <div class="row"><span class="keys"><kbd>20261223</kbd></span>Compact date</div>
+      <div class="row"><span class="keys"><kbd>20261223</kbd></span><span class="label">Compact date</span></div>
       <p class="note">Language: tray → Settings → Date input</p>
     </section>
 
