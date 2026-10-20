@@ -230,7 +230,8 @@
   }
 
   onMount(() => {
-    // settings first: the startup check must see autoUpdateCheck
+    // settings first: the startup check must see autoUpdateCheck, and once
+    // they have loaded the backend's setup() is done and can answer it
     initSettings().then(() => lookForUpdate());
     reload();
     // retried after a minute and after ten, since at login the network is

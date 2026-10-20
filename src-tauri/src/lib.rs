@@ -742,11 +742,11 @@ fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     // Tauri builds the windows from tauri.conf.json right before it runs our
     // setup() hook, so the popup webview is already loading while setup() is
     // still reading settings.json. `check_update` is async and runs on the
-    // tokio pool without waiting for the main thread, so its first call can
-    // arrive before `app.manage(Mutex::new(settings))` (seen in `tauri dev`,
-    // where Vite serves the page hot). `try_state` turns that into a plain
-    // command error, which the popup swallows for automatic checks and
-    // retries, instead of a panic on the tokio worker.
+    // tokio pool without waiting for the main thread, so a call can arrive
+    // before `app.manage(Mutex::new(settings))`. The popup's startup check
+    // waits for `initSettings`, which asks until setup() is done; for any
+    // other early call `try_state` turns this into a plain command error
+    // instead of a panic on the tokio worker.
     let endpoint = app
         .try_state::<Mutex<Settings>>()
         .ok_or_else(|| "the app is still starting".to_string())?
