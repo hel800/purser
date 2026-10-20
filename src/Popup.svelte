@@ -166,7 +166,8 @@
   }
 
   let upToDateTimer: ReturnType<typeof setTimeout> | undefined;
-  // when the last check ran (any outcome), for the throttled check on show
+  // when the last check that got an answer started, for the throttled check
+  // on show (a failed one doesn't count, so opening the popup tries again)
   let lastUpdateCheck = 0;
 
   /** Shows a transient banner phase and hides it again after `ms`. */
@@ -194,6 +195,7 @@
       found = await checkForUpdate();
     } catch (e) {
       console.warn("update check failed:", e);
+      lastUpdateCheck = 0;
       if (manual) {
         updateError = e instanceof Error ? e.message : String(e);
         flashUpdatePhase("checkfailed", 8000);
@@ -230,7 +232,8 @@
   }
 
   onMount(() => {
-    // settings first: the startup check must see autoUpdateCheck
+    // settings first: the startup check must see autoUpdateCheck, and once
+    // they have loaded the backend's setup() is done and can answer it
     initSettings().then(() => lookForUpdate());
     reload();
     // retried after a minute and after ten, since at login the network is

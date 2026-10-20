@@ -36,11 +36,29 @@ function apply(s: AppSettings) {
   settings.dateLanguage = s.dateLanguage;
 }
 
+/** How long `initSettings` keeps asking a backend that is still starting. */
+export const SETTINGS_RETRY_MS = 50;
+export const SETTINGS_TIMEOUT_MS = 5000;
+
+/**
+ * Loads the settings from the backend and follows their changes. Tauri
+ * creates the windows from tauri.conf.json right before the backend's
+ * `setup()` manages the settings, and a release build serves its bundle from
+ * memory, so the first `get_settings` usually arrives too early and fails.
+ * It is asked again until `setup()` is done, so callers that wait for this
+ * (the popup's startup update check) run with the real settings.
+ */
 export async function initSettings(): Promise<void> {
-  try {
-    apply(await invoke<AppSettings>("get_settings"));
-  } catch {
-    // keep defaults if the backend is unavailable (e.g. plain browser)
+  const deadline = Date.now() + SETTINGS_TIMEOUT_MS;
+  for (;;) {
+    try {
+      apply(await invoke<AppSettings>("get_settings"));
+      break;
+    } catch {
+      // keep defaults if the backend is unavailable (e.g. plain browser)
+      if (Date.now() >= deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, SETTINGS_RETRY_MS));
+    }
   }
   await listen<AppSettings>("purser://settings-changed", (e) => apply(e.payload));
 }
