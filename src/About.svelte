@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { getVersion } from "@tauri-apps/api/app";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { invoke } from "@tauri-apps/api/core";
@@ -17,15 +16,20 @@
     version = await getVersion();
   });
 
+  /** Hides About and hands focus back to the window that opened it. */
+  function close() {
+    invoke("close_about");
+  }
+
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") getCurrentWindow().hide();
+    if (e.key === "Escape") close();
   }
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
 <main data-tauri-drag-region>
-  <button class="close" title="Close (Esc)" onclick={() => getCurrentWindow().hide()}>✕</button>
+  <button class="close" title="Close (Esc)" onclick={close}>✕</button>
   <img class="wordmark" src={wordmark} alt="Purser" width="160" height="24" />
   <p class="version">Version {version}</p>
   <p class="meta">MIT License · Released {released}</p>
