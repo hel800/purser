@@ -128,6 +128,10 @@ struct AppMenuOpen(AtomicBool);
 /// regains focus when the sheet closes.
 struct SheetOwner(Mutex<Option<String>>);
 
+/// Label of the window that opened About, if it is open: the same modal
+/// behavior as the keyboard-shortcut sheet (`SheetOwner`).
+struct AboutOwner(Mutex<Option<String>>);
+
 /// True while the help sheet is recording a combo. A combo owned by another
 /// application triggers that app and steals focus — in that case the sheet
 /// must stay open (the frontend stops the recording and explains) instead
@@ -226,8 +230,13 @@ fn get_settings(state: tauri::State<'_, Mutex<Settings>>) -> SettingsDto {
 }
 
 #[tauri::command]
-fn open_about(app: AppHandle) {
-    show_about(&app);
+fn open_about(window: WebviewWindow, app: AppHandle) {
+    show_about(&app, Some(window.label().to_string()));
+}
+
+#[tauri::command]
+fn close_about(app: AppHandle) {
+    close_about_inner(&app);
 }
 
 /// The keyboard-shortcut sheet is a small always-on-top window like About,
@@ -853,11 +862,31 @@ fn check_for_updates(app: &AppHandle) {
     }
 }
 
-fn show_about(app: &AppHandle) {
+/// About behaves like the keyboard-shortcut sheet (see `show_help`): the
+/// window that opened it stays visible underneath and regains focus on close.
+fn show_about(app: &AppHandle, owner: Option<String>) {
     if let Some(win) = app.get_webview_window("about") {
+        // set before taking focus, so the owner's focus-loss handler keeps it
+        *app.state::<AboutOwner>().0.lock().unwrap() = owner;
         let _ = win.center();
         let _ = win.show();
         let _ = win.set_focus();
+    }
+}
+
+fn about_is_open(app: &AppHandle) -> bool {
+    app.state::<AboutOwner>().0.lock().unwrap().is_some()
+}
+
+fn close_about_inner(app: &AppHandle) {
+    let owner = app.state::<AboutOwner>().0.lock().unwrap().take();
+    if let Some(win) = app.get_webview_window("about") {
+        let _ = win.hide();
+    }
+    if let Some(owner_win) = owner.and_then(|label| app.get_webview_window(&label)) {
+        if owner_win.is_visible().unwrap_or(false) {
+            let _ = owner_win.set_focus();
+        }
     }
 }
 
@@ -918,14 +947,26 @@ fn refresh_tray_items(app: &AppHandle) {
     }
 }
 
-/// The app menu, shown by the tray icon and by the logo of the popup,
-/// quick-add and full-size view. `without` leaves out the entry with that id,
-/// the one for the window a logo menu is opened from. Texts and check marks
-/// follow the current settings.
+/// The app menu, shown by the tray icon (`opener` None) and by the logo of the
+/// popup, quick-add and full-size view (`opener` is that window's label). A
+/// logo menu leaves out the entry for its own window, and its "Keyboard
+/// shortcuts" and "About Purser" carry the opener in their id
+/// ("about:popup"), so the opener stays underneath like with its own buttons.
+/// Texts and check marks follow the current settings.
 fn build_app_menu(
     app: &AppHandle,
-    without: Option<&str>,
+    opener: Option<&str>,
 ) -> tauri::Result<(Menu<tauri::Wry>, AppMenuItems)> {
+    let without = match opener {
+        Some("popup") => Some("list"),
+        Some("quickadd") => Some("add"),
+        Some("list") => Some("fulllist"),
+        _ => None,
+    };
+    let owned_id = |id: &str| match opener {
+        Some(label) => format!("{id}:{label}"),
+        None => id.to_string(),
+    };
     let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
     let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
     let check = |id: &str, text: &str, checked: bool| {
@@ -972,8 +1013,8 @@ fn build_app_menu(
     let full_list = item("fulllist", "Show full list")?;
     let import = item("import", "Import todos…")?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let help = item("help", "Keyboard shortcuts")?;
-    let about = item("about", "About Purser")?;
+    let help = item(&owned_id("help"), "Keyboard shortcuts")?;
+    let about = item(&owned_id("about"), "About Purser")?;
     let update = item("update", "Check for updates…")?;
     let quit = item("quit", "Quit")?;
     let entries: [(&str, &dyn IsMenuItem<tauri::Wry>); 10] = [
@@ -1033,7 +1074,10 @@ fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         "quit" => app.exit(0),
         "help" => show_help(app, None),
-        "about" => show_about(app),
+        "about" => show_about(app, None),
+        // from a logo menu, with the window it was opened from
+        id if id.starts_with("help:") => show_help(app, Some(id["help:".len()..].into())),
+        id if id.starts_with("about:") => show_about(app, Some(id["about:".len()..].into())),
         "update" => check_for_updates(app),
         _ => {}
     }
@@ -1045,14 +1089,11 @@ fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
 /// offered by the keyboard-shortcut sheet and About.
 #[tauri::command]
 fn show_app_menu(window: WebviewWindow) -> Result<(), String> {
-    let without = match window.label() {
-        "popup" => "list",
-        "quickadd" => "add",
-        "list" => "fulllist",
-        _ => return Ok(()),
-    };
+    if !matches!(window.label(), "popup" | "quickadd" | "list") {
+        return Ok(());
+    }
     let app = window.app_handle();
-    let (menu, _) = build_app_menu(app, Some(without)).map_err(|e| e.to_string())?;
+    let (menu, _) = build_app_menu(app, Some(window.label())).map_err(|e| e.to_string())?;
     // the menu runs its own loop until it closes; meanwhile a lost focus
     // must not hide the window under it
     let open = &app.state::<AppMenuOpen>().0;
@@ -1203,6 +1244,7 @@ pub fn run() {
             begin_capture,
             end_capture,
             open_about,
+            close_about,
             open_help,
             open_list,
             list_state,
@@ -1228,6 +1270,7 @@ pub fn run() {
             }
             app.manage(Mutex::new(settings));
             app.manage(SheetOwner(Mutex::new(None)));
+            app.manage(AboutOwner(Mutex::new(None)));
             app.manage(Capturing(AtomicBool::new(false)));
             app.manage(Printing(AtomicBool::new(false)));
             app.manage(ListState(Mutex::new(serde_json::Value::Null)));
@@ -1339,7 +1382,14 @@ pub fn run() {
             // the app lives in the tray: closing or losing focus just hides
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                // the two sheets also release their owner (Alt+F4)
+                match window.label() {
+                    "help" => close_help_inner(window.app_handle()),
+                    "about" => close_about_inner(window.app_handle()),
+                    _ => {
+                        let _ = window.hide();
+                    }
+                }
             }
             WindowEvent::Focused(true) if window.label() == "list" => {
                 // back from the print dialog (or any other return): blur hides again
@@ -1368,11 +1418,17 @@ pub fn run() {
                         // close it and hand focus back to the opener
                         close_help_inner(app);
                     }
-                } else if !help_is_open(app) {
+                } else if window.label() == "about" {
+                    // the keyboard-shortcut sheet opened from About stays on
+                    // top of it; any other focus loss closes About
+                    if !help_is_open(app) {
+                        close_about_inner(app);
+                    }
+                } else if !help_is_open(app) && !about_is_open(app) {
                     let _ = window.hide();
                 }
-                // else: the keyboard-shortcut sheet is on top — keep the
-                // caller open underneath so it reads like a modal
+                // else: the keyboard-shortcut sheet or About is on top — keep
+                // the caller open underneath so it reads like a modal
             }
             _ => {}
         })
