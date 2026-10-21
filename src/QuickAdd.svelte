@@ -191,7 +191,7 @@
 
 <main>
   <div class="titlebar">
-    <Logo size={18} />
+    <Logo size={18} menu />
     <span>Add new todo</span>
     <button class="small-btn" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
     <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />

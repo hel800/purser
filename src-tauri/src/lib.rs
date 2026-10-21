@@ -116,8 +116,12 @@ struct AppMenuItems {
 }
 
 /// The tray menu's `AppMenuItems`, so their accelerator text and check marks
-/// can be refreshed when a setting changes.
+/// can be refreshed when a setting changes, from the tray or a logo menu.
 struct TrayItems(Mutex<Option<AppMenuItems>>);
+
+/// True while a logo menu (`show_app_menu`) is open over a window. The window
+/// must not hide meanwhile, as it would on losing focus.
+struct AppMenuOpen(AtomicBool);
 
 /// Label of the window that opened the keyboard-shortcut sheet, if it is
 /// open. Kept so the caller stays visible underneath (modal behavior) and
@@ -914,9 +918,14 @@ fn refresh_tray_items(app: &AppHandle) {
     }
 }
 
-/// The app menu shown by the tray icon. Texts and check marks follow the
-/// current settings.
-fn build_app_menu(app: &AppHandle) -> tauri::Result<(Menu<tauri::Wry>, AppMenuItems)> {
+/// The app menu, shown by the tray icon and by the logo of the popup,
+/// quick-add and full-size view. `without` leaves out the entry with that id,
+/// the one for the window a logo menu is opened from. Texts and check marks
+/// follow the current settings.
+fn build_app_menu(
+    app: &AppHandle,
+    without: Option<&str>,
+) -> tauri::Result<(Menu<tauri::Wry>, AppMenuItems)> {
     let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
     let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
     let check = |id: &str, text: &str, checked: bool| {
@@ -979,7 +988,11 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<(Menu<tauri::Wry>, AppMenuIt
         ("update", &update),
         ("quit", &quit),
     ];
-    let kept: Vec<&dyn IsMenuItem<tauri::Wry>> = entries.iter().map(|(_, item)| *item).collect();
+    let kept: Vec<&dyn IsMenuItem<tauri::Wry>> = entries
+        .iter()
+        .filter(|(id, _)| Some(*id) != without)
+        .map(|(_, item)| *item)
+        .collect();
     let menu = Menu::with_items(app, &kept)?;
 
     let items = AppMenuItems {
@@ -993,10 +1006,9 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<(Menu<tauri::Wry>, AppMenuIt
     Ok((menu, items))
 }
 
-/// Clicks in the app menu land here. A setting is toggled from its stored
-/// value rather than from the clicked check item, so any copy of the menu can
-/// send the click, and `refresh_tray_items` then brings the tray's marks in
-/// line.
+/// Clicks in the tray menu and in every logo menu land here. Only the menu
+/// that was clicked flipped its check item, so a setting is toggled from its
+/// stored value, and `refresh_tray_items` then brings the tray's marks in line.
 fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id.as_ref() {
         "add" => toggle_quick_add(app),
@@ -1025,6 +1037,29 @@ fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
         "update" => check_for_updates(app),
         _ => {}
     }
+}
+
+/// A left or right click on the logo: the app menu at the cursor, without
+/// the entry for the calling window. Built anew each time, so it is always
+/// current; its clicks reach `on_app_menu_event` like the tray's. Not
+/// offered by the keyboard-shortcut sheet and About.
+#[tauri::command]
+fn show_app_menu(window: WebviewWindow) -> Result<(), String> {
+    let without = match window.label() {
+        "popup" => "list",
+        "quickadd" => "add",
+        "list" => "fulllist",
+        _ => return Ok(()),
+    };
+    let app = window.app_handle();
+    let (menu, _) = build_app_menu(app, Some(without)).map_err(|e| e.to_string())?;
+    // the menu runs its own loop until it closes; meanwhile a lost focus
+    // must not hide the window under it
+    let open = &app.state::<AppMenuOpen>().0;
+    open.store(true, Ordering::Relaxed);
+    let shown = window.popup_menu(&menu);
+    open.store(false, Ordering::Relaxed);
+    shown.map_err(|e| e.to_string())
 }
 
 /// Replaces one of the two global shortcuts: validates the combo, persists
@@ -1180,7 +1215,8 @@ pub fn run() {
             import_started,
             import_finished,
             check_update,
-            install_update
+            install_update,
+            show_app_menu
         ])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());
@@ -1201,6 +1237,7 @@ pub fn run() {
                 acked: AtomicBool::new(false),
             });
             app.manage(TrayItems(Mutex::new(None)));
+            app.manage(AppMenuOpen(AtomicBool::new(false)));
             app.manage(PendingUpdate(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
@@ -1264,7 +1301,7 @@ pub fn run() {
                     None => "Purser".into(),
                 };
 
-                let (menu, items) = build_app_menu(app.handle())?;
+                let (menu, items) = build_app_menu(app.handle(), None)?;
                 // kept so the accelerator texts and check marks can be refreshed
                 *app.state::<TrayItems>().0.lock().unwrap() = Some(items);
 
@@ -1277,6 +1314,7 @@ pub fn run() {
                     .tooltip(&tooltip)
                     .menu(&menu)
                     .show_menu_on_left_click(false)
+                    // also receives the clicks of every logo menu
                     .on_menu_event(on_app_menu_event)
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
@@ -1313,7 +1351,11 @@ pub fn run() {
             }
             WindowEvent::Focused(false) => {
                 let app = window.app_handle();
-                if window.label() == "list" && app.state::<Printing>().0.load(Ordering::Relaxed) {
+                if app.state::<AppMenuOpen>().0.load(Ordering::Relaxed) {
+                    // the logo menu is open over this window — keep it
+                } else if window.label() == "list"
+                    && app.state::<Printing>().0.load(Ordering::Relaxed)
+                {
                     // the print dialog took focus — keep the view open under it
                 } else if window.label() == "help" {
                     if app.state::<Capturing>().0.load(Ordering::Relaxed) {
