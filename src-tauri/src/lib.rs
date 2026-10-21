@@ -3,7 +3,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent,
 };
@@ -104,9 +104,20 @@ impl From<&Settings> for SettingsDto {
     }
 }
 
-/// The tray's "Add todo"/"Show todos" items, so their accelerator text can
-/// be refreshed when a shortcut changes.
-struct TrayShortcutItems(Mutex<Option<(MenuItem<tauri::Wry>, MenuItem<tauri::Wry>)>>);
+/// The app menu's entries whose text or check mark follows the settings.
+#[derive(Clone)]
+struct AppMenuItems {
+    add: MenuItem<tauri::Wry>,
+    list: MenuItem<tauri::Wry>,
+    autostart: CheckMenuItem<tauri::Wry>,
+    hour24: CheckMenuItem<tauri::Wry>,
+    auto_update: CheckMenuItem<tauri::Wry>,
+    date_languages: Vec<(&'static str, CheckMenuItem<tauri::Wry>)>,
+}
+
+/// The tray menu's `AppMenuItems`, so their accelerator text and check marks
+/// can be refreshed when a setting changes.
+struct TrayItems(Mutex<Option<AppMenuItems>>);
 
 /// Label of the window that opened the keyboard-shortcut sheet, if it is
 /// open. Kept so the caller stays visible underneath (modal behavior) and
@@ -712,7 +723,8 @@ fn import_finished(
         });
 }
 
-/// Applies `change` to the settings, saves them and tells the webviews.
+/// Applies `change` to the settings, saves them and tells the webviews and
+/// the tray menu.
 fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) {
     let snapshot = {
         let state = app.state::<Mutex<Settings>>();
@@ -721,6 +733,7 @@ fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) {
         s.clone()
     };
     save_settings(app, &snapshot);
+    refresh_tray_items(app);
     let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
 }
 
@@ -879,15 +892,139 @@ fn tray_shortcut_labels(settings: &Settings) -> (String, String) {
     )
 }
 
-fn set_tray_shortcut_labels(app: &AppHandle, settings: &Settings) {
-    let state = app.state::<TrayShortcutItems>();
+/// Sets the tray menu's shortcut texts and check marks from the settings and
+/// the autostart state.
+fn refresh_tray_items(app: &AppHandle) {
+    let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
+    let state = app.state::<TrayItems>();
     let items = state.0.lock().unwrap();
-    let Some((add, list)) = items.as_ref() else {
+    let Some(items) = items.as_ref() else {
         return;
     };
-    let (add_text, list_text) = tray_shortcut_labels(settings);
-    let _ = add.set_text(add_text);
-    let _ = list.set_text(list_text);
+    let (add_text, list_text) = tray_shortcut_labels(&settings);
+    let _ = items.add.set_text(add_text);
+    let _ = items.list.set_text(list_text);
+    let _ = items
+        .autostart
+        .set_checked(app.autolaunch().is_enabled().unwrap_or(false));
+    let _ = items.hour24.set_checked(settings.hour24);
+    let _ = items.auto_update.set_checked(settings.auto_update_check);
+    for (language, item) in &items.date_languages {
+        let _ = item.set_checked(settings.date_language == *language);
+    }
+}
+
+/// The app menu shown by the tray icon. Texts and check marks follow the
+/// current settings.
+fn build_app_menu(app: &AppHandle) -> tauri::Result<(Menu<tauri::Wry>, AppMenuItems)> {
+    let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
+    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
+    let check = |id: &str, text: &str, checked: bool| {
+        CheckMenuItem::with_id(app, id, text, true, checked, None::<&str>)
+    };
+
+    let (add_text, list_text) = tray_shortcut_labels(&settings);
+    let add = item("add", &add_text)?;
+    let list = item("list", &list_text)?;
+    let autostart = check(
+        "autostart",
+        "Start with Windows",
+        app.autolaunch().is_enabled().unwrap_or(false),
+    )?;
+    let hour24 = check("hour24", "24-hour clock", settings.hour24)?;
+    let auto_update = check(
+        "auto_update",
+        "Check for updates automatically",
+        settings.auto_update_check,
+    )?;
+    // three check items that behave like radio buttons
+    let mut date_languages = Vec::new();
+    for (language, label) in [
+        ("auto", "Automatic (Windows language)"),
+        ("en", "English"),
+        ("de", "Deutsch"),
+    ] {
+        let id = format!("date_language_{language}");
+        let checked = settings.date_language == language;
+        date_languages.push((language, check(&id, label, checked)?));
+    }
+    let date_language_refs: Vec<&dyn IsMenuItem<tauri::Wry>> = date_languages
+        .iter()
+        .map(|(_, item)| item as &dyn IsMenuItem<tauri::Wry>)
+        .collect();
+    let date_language_menu = Submenu::with_items(app, "Date input", true, &date_language_refs)?;
+    let settings_menu = Submenu::with_items(
+        app,
+        "Settings",
+        true,
+        &[&autostart, &hour24, &auto_update, &date_language_menu],
+    )?;
+
+    let full_list = item("fulllist", "Show full list")?;
+    let import = item("import", "Import todos…")?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let help = item("help", "Keyboard shortcuts")?;
+    let about = item("about", "About Purser")?;
+    let update = item("update", "Check for updates…")?;
+    let quit = item("quit", "Quit")?;
+    let entries: [(&str, &dyn IsMenuItem<tauri::Wry>); 10] = [
+        ("add", &add),
+        ("list", &list),
+        ("fulllist", &full_list),
+        ("import", &import),
+        ("settings", &settings_menu),
+        ("separator", &separator),
+        ("help", &help),
+        ("about", &about),
+        ("update", &update),
+        ("quit", &quit),
+    ];
+    let kept: Vec<&dyn IsMenuItem<tauri::Wry>> = entries.iter().map(|(_, item)| *item).collect();
+    let menu = Menu::with_items(app, &kept)?;
+
+    let items = AppMenuItems {
+        add,
+        list,
+        autostart,
+        hour24,
+        auto_update,
+        date_languages,
+    };
+    Ok((menu, items))
+}
+
+/// Clicks in the app menu land here. A setting is toggled from its stored
+/// value rather than from the clicked check item, so any copy of the menu can
+/// send the click, and `refresh_tray_items` then brings the tray's marks in
+/// line.
+fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
+    match event.id.as_ref() {
+        "add" => toggle_quick_add(app),
+        "list" => toggle_popup(app),
+        "fulllist" => show_list(app, serde_json::Value::Null),
+        "import" => start_import(app),
+        "autostart" => {
+            let enable = !app.autolaunch().is_enabled().unwrap_or(false);
+            let _ = if enable {
+                app.autolaunch().enable()
+            } else {
+                app.autolaunch().disable()
+            };
+            // shows the actual state, also when switching it failed
+            refresh_tray_items(app);
+        }
+        "hour24" => update_settings(app, |s| s.hour24 = !s.hour24),
+        "auto_update" => update_settings(app, |s| s.auto_update_check = !s.auto_update_check),
+        id if id.starts_with("date_language_") => {
+            let chosen = id["date_language_".len()..].to_string();
+            update_settings(app, |s| s.date_language = chosen);
+        }
+        "quit" => app.exit(0),
+        "help" => show_help(app, None),
+        "about" => show_about(app),
+        "update" => check_for_updates(app),
+        _ => {}
+    }
 }
 
 /// Replaces one of the two global shortcuts: validates the combo, persists
@@ -957,7 +1094,7 @@ fn set_shortcut(app: AppHandle, id: String, shortcut: String) -> Result<(), Stri
 
     app.state::<Capturing>().0.store(false, Ordering::Relaxed);
     save_settings(&app, &snapshot);
-    set_tray_shortcut_labels(&app, &snapshot);
+    refresh_tray_items(&app);
     let _ = app.emit("purser://settings-changed", SettingsDto::from(&snapshot));
     Ok(())
 }
@@ -1063,7 +1200,7 @@ pub fn run() {
                 generation: AtomicU32::new(0),
                 acked: AtomicBool::new(false),
             });
-            app.manage(TrayShortcutItems(Mutex::new(None)));
+            app.manage(TrayItems(Mutex::new(None)));
             app.manage(PendingUpdate(Mutex::new(None)));
 
             // an invalid stored combo would otherwise be un-fixable from the
@@ -1086,7 +1223,6 @@ pub fn run() {
                     save_settings(app.handle(), &snapshot);
                 }
             }
-            let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
 
             #[cfg(desktop)]
             {
@@ -1128,94 +1264,9 @@ pub fn run() {
                     None => "Purser".into(),
                 };
 
-                let autostart_item = CheckMenuItem::with_id(
-                    app,
-                    "autostart",
-                    "Start with Windows",
-                    true,
-                    app.autolaunch().is_enabled().unwrap_or(false),
-                    None::<&str>,
-                )?;
-                let hour24_item = CheckMenuItem::with_id(
-                    app,
-                    "hour24",
-                    "24-hour clock",
-                    true,
-                    settings.hour24,
-                    None::<&str>,
-                )?;
-                let auto_update_item = CheckMenuItem::with_id(
-                    app,
-                    "auto_update",
-                    "Check for updates automatically",
-                    true,
-                    settings.auto_update_check,
-                    None::<&str>,
-                )?;
-                // three check items that behave like radio buttons
-                let date_language_item = |language: &str, label: &str| {
-                    CheckMenuItem::with_id(
-                        app,
-                        format!("date_language_{language}"),
-                        label,
-                        true,
-                        settings.date_language == language,
-                        None::<&str>,
-                    )
-                };
-                let date_auto = date_language_item("auto", "Automatic (Windows language)")?;
-                let date_en = date_language_item("en", "English")?;
-                let date_de = date_language_item("de", "Deutsch")?;
-                let date_language_menu = Submenu::with_items(
-                    app,
-                    "Date input",
-                    true,
-                    &[&date_auto, &date_en, &date_de],
-                )?;
-                let settings_menu = Submenu::with_items(
-                    app,
-                    "Settings",
-                    true,
-                    &[
-                        &autostart_item,
-                        &hour24_item,
-                        &auto_update_item,
-                        &date_language_menu,
-                    ],
-                )?;
-
-                let (add_text, list_text) = tray_shortcut_labels(&settings);
-
-                let menu = Menu::with_items(
-                    app,
-                    &[
-                        &MenuItem::with_id(app, "add", add_text, true, None::<&str>)?,
-                        &MenuItem::with_id(app, "list", list_text, true, None::<&str>)?,
-                        &MenuItem::with_id(app, "fulllist", "Show full list", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "import", "Import todos…", true, None::<&str>)?,
-                        &settings_menu,
-                        &PredefinedMenuItem::separator(app)?,
-                        &MenuItem::with_id(app, "help", "Keyboard shortcuts", true, None::<&str>)?,
-                        &MenuItem::with_id(app, "about", "About Purser", true, None::<&str>)?,
-                        &MenuItem::with_id(
-                            app,
-                            "update",
-                            "Check for updates…",
-                            true,
-                            None::<&str>,
-                        )?,
-                        &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
-                    ],
-                )?;
-
-                let autostart_check = autostart_item.clone();
-                let hour24_check = hour24_item.clone();
-                let auto_update_check = auto_update_item.clone();
-                let date_language_checks = [
-                    ("auto", date_auto.clone()),
-                    ("en", date_en.clone()),
-                    ("de", date_de.clone()),
-                ];
+                let (menu, items) = build_app_menu(app.handle())?;
+                // kept so the accelerator texts and check marks can be refreshed
+                *app.state::<TrayItems>().0.lock().unwrap() = Some(items);
 
                 TrayIconBuilder::with_id("main")
                     .icon(if taskbar_is_light() {
@@ -1226,49 +1277,7 @@ pub fn run() {
                     .tooltip(&tooltip)
                     .menu(&menu)
                     .show_menu_on_left_click(false)
-                    .on_menu_event(move |app, event| match event.id.as_ref() {
-                        "add" => toggle_quick_add(app),
-                        "list" => toggle_popup(app),
-                        "fulllist" => show_list(app, serde_json::Value::Null),
-                        "import" => start_import(app),
-                        "autostart" => {
-                            // the click already flipped the checkbox; apply it
-                            let enable = autostart_check.is_checked().unwrap_or(false);
-                            let result = if enable {
-                                app.autolaunch().enable()
-                            } else {
-                                app.autolaunch().disable()
-                            };
-                            if result.is_err() {
-                                let actual = app.autolaunch().is_enabled().unwrap_or(!enable);
-                                let _ = autostart_check.set_checked(actual);
-                            }
-                        }
-                        "hour24" => {
-                            let on = hour24_check.is_checked().unwrap_or(true);
-                            update_settings(app, |s| s.hour24 = on);
-                        }
-                        "auto_update" => {
-                            let on = auto_update_check.is_checked().unwrap_or(true);
-                            update_settings(app, |s| s.auto_update_check = on);
-                        }
-                        id if id.starts_with("date_language_") => {
-                            let chosen = &id["date_language_".len()..];
-                            // the click toggled only the clicked item; check
-                            // it again (a second click would uncheck it) and
-                            // uncheck the others
-                            for (language, item) in &date_language_checks {
-                                let _ = item.set_checked(*language == chosen);
-                            }
-                            let chosen = chosen.to_string();
-                            update_settings(app, |s| s.date_language = chosen);
-                        }
-                        "quit" => app.exit(0),
-                        "help" => show_help(app, None),
-                        "about" => show_about(app),
-                        "update" => check_for_updates(app),
-                        _ => {}
-                    })
+                    .on_menu_event(on_app_menu_event)
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
                             button: MouseButton::Left,
@@ -1280,18 +1289,6 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
-
-                // keep refs so the tray accelerator text can be refreshed
-                *app.state::<TrayShortcutItems>().0.lock().unwrap() = Some((
-                    menu.get("add")
-                        .ok_or("missing tray item")?
-                        .as_menuitem_unchecked()
-                        .clone(),
-                    menu.get("list")
-                        .ok_or("missing tray item")?
-                        .as_menuitem_unchecked()
-                        .clone(),
-                ));
 
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 if !args.is_empty() {
