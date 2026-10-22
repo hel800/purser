@@ -86,6 +86,10 @@ describe("parseTodo", () => {
   it("reads dotted dates in US order (pins current behaviour, see #43)", () => {
     expect(parseTodo("x 11.10.2026").dueAt).toBe(local(2026, 11, 10, 12));
   });
+
+  it("never puts last friday in the future", () => {
+    expect(parseTodo("x last friday")).toMatchObject({ dueAt: local(2026, 10, 9, 12), duePast: true });
+  });
 });
 
 describe("splitNote", () => {

@@ -18,8 +18,8 @@ export interface FoundDate {
 /**
  * Finds the first date expression in `text`, e.g. "friday 5pm" (English) or
  * "Fr 15 Uhr" (German). Compact ISO dates like "20261223" work in both
- * languages. Dates lie in the future (`forwardDate`), except that a date
- * without a year takes the nearest year (`inNearestYear`).
+ * languages. A weekday lies ahead ("friday") unless it is a past one ("last
+ * friday"), and a date without a year takes the nearest year (`inNearestYear`).
  */
 export function findDate(text: string, language: DateLanguage, ref: Date = new Date()): FoundDate | null {
   const parser = language === "de" ? german : english;
@@ -238,6 +238,26 @@ function comingWeekdayParser(comingWords: string, weekdays: Record<string, numbe
 }
 
 /**
+ * "last Friday" / "letzten Freitag": the most recent such weekday before
+ * today, which the past-date warning then flags. chrono rolls "last Friday"
+ * forward to the coming one (`forwardDate`) and reads only the "Freitag" of
+ * "vergangenen Freitag".
+ */
+function lastWeekdayParser(lastWords: string, weekdays: Record<string, number>): Parser {
+  return {
+    pattern: () =>
+      new RegExp(`(?:${lastWords})\\s+(${alternation(weekdays)})${NOT_BEFORE_WORD}`, "iu"),
+    extract: (context, match) => {
+      const today = startOfDay(context.refDate);
+      const weekday = weekdays[match[1].toLowerCase()];
+      const daysBack = (today.getDay() - weekday + 7) % 7 || 7;
+      today.setDate(today.getDate() - daysBack);
+      return components(today);
+    },
+  };
+}
+
+/**
  * chrono's own dates without a year ("10 Oct", "10. Oktober") get theirs from
  * `forwardDate`, which moves a date that passed yesterday a whole year ahead.
  * They follow `inNearestYear` like Purser's own formats.
@@ -361,6 +381,8 @@ function buildEnglish(): chrono.Chrono {
       comingWeekdayParser("coming", ENGLISH_WEEKDAYS),
     ].map(atWordStart)
   );
+  // first, so it wins over chrono's own reading of the same words
+  parser.parsers.unshift(atWordStart(lastWeekdayParser("last|previous", ENGLISH_WEEKDAYS)));
   letCompactIsoThrough(parser);
   parser.refiners.push(nearestYearRefiner);
   return parser;
@@ -376,6 +398,10 @@ function buildGerman(): chrono.Chrono {
       monthPartParser({ anfang: "start", mitte: "middle", ende: "end" }, GERMAN_MONTHS),
       comingWeekdayParser("kommende[nrs]?", GERMAN_WEEKDAYS),
     ].map(atWordStart)
+  );
+  // first, so it wins over chrono's own reading of the same words
+  parser.parsers.unshift(
+    atWordStart(lastWeekdayParser("letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?", GERMAN_WEEKDAYS))
   );
   letCompactIsoThrough(parser);
   parser.refiners.push(

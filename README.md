@@ -81,6 +81,7 @@ water plants
     next year's once this year's lies more than 30 days back. One that has
     just passed stays in the past and is flagged (see below) instead of
     jumping almost a year ahead
+  - `last friday` / `letzten Freitag` is the previous Friday
 - `#word` assigns a category (created on the fly); existing category names
   autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
 - Everything after a `//` (preceded by a space) becomes the todo's note —

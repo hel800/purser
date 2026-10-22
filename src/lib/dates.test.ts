@@ -204,3 +204,17 @@ describe("English", () => {
     }
   });
 });
+
+describe("past weekdays (REF is a Sunday)", () => {
+  it.each([
+    ["last friday", "en", "2026-09-25 12:00"],
+    ["previous monday", "en", "2026-09-21 12:00"],
+    ["last sunday", "en", "2026-09-20 12:00"], // a week ago, not today
+    ["letzten Freitag", "de", "2026-09-25 12:00"],
+    ["vergangenen Freitag", "de", "2026-09-25 12:00"],
+    ["vorigen Sonntag", "de", "2026-09-20 12:00"],
+  ] as const)("%s (%s) -> %s", (input, language, expected) => {
+    expect(found(input, language)).toBe(expected);
+    expect(matchedText(input, language)).toBe(input);
+  });
+});
