@@ -77,9 +77,10 @@ describe("parseTodo", () => {
     expect(parseTodo("call bob friday").duePast).toBe(false);
   });
 
-  it("rolls dates without a year forward", () => {
-    expect(parseTodo("x 10 Oct").dueAt).toBe(local(2027, 10, 10, 12));
+  it("keeps a date without a year that just passed in the past, rolls older ones forward", () => {
+    expect(parseTodo("sdfj 10 Oct")).toMatchObject({ text: "sdfj", dueAt: local(2026, 10, 10, 12), duePast: true });
     expect(parseTodo("x jan 1").dueAt).toBe(local(2027, 1, 1, 12));
+    expect(parseTodo("x 1 Sep").dueAt).toBe(local(2027, 9, 1, 12));
   });
 
   it("reads dotted dates in US order (pins current behaviour, see #43)", () => {

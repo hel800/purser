@@ -71,12 +71,16 @@ water plants
     `coming monday`, `early/mid/end of October`, …
   - German: `Fr 15 Uhr`, `Freitag 1500`, `morgen`, `übermorgen`,
     `nächsten`/`kommenden Montag`, `in 2 Monaten`, `Anfang/Mitte/Ende Oktober`,
-    `KW 44` (its Monday), `23.12.2026`, `23.12.` (the next 23 Dec), …
+    `KW 44` (its Monday), `23.12.2026`, `23.12.` (the nearest 23 Dec), …
     Weekday abbreviations (`Mo` … `So`) count only when capitalised and not
     the first word of the line, so `so bald wie möglich` and
     `So schnell es geht` stay text; with a time (`Fr 15 Uhr Zahnarzt`) they
     always count
   - Both: compact dates like `20261223`
+  - A date without a year (`10 Oct`, `23.12.`, `KW 44`) is this year's, or
+    next year's once this year's lies more than 30 days back. One that has
+    just passed stays in the past and is flagged (see below) instead of
+    jumping almost a year ahead
 - `#word` assigns a category (created on the fly); existing category names
   autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
 - Everything after a `//` (preceded by a space) becomes the todo's note —
@@ -131,7 +135,8 @@ categories are never changed. Examples live in [`samples/import`](samples/import
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
   next working day before 12:00
 - A due date that is already over as you type it — a full date with the wrong
-  year or day, `today 9am` in the afternoon, `yesterday` — is shown in red
+  year or day, `today 9am` in the afternoon, `yesterday`, `10 Oct` on 11 Oct —
+  is shown in red
   with "in the past" in the quick-add chip and the `D` editor's preview. It is
   only a nudge for a likely typo: saving works as usual. A plain `today` is
   fine

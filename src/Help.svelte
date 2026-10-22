@@ -230,7 +230,7 @@
         <div class="row"><span class="keys"><kbd>morgen</kbd> <kbd>in 2 Wochen</kbd></span><span class="label">Relative</span></div>
         <div class="row"><span class="keys"><kbd>Ende Oktober</kbd></span><span class="label">Also Anfang, Mitte</span></div>
         <div class="row"><span class="keys"><kbd>KW 44</kbd></span><span class="label">Monday of calendar week 44</span></div>
-        <div class="row"><span class="keys"><kbd>23.12.</kbd></span><span class="label">Next 23 December</span></div>
+        <div class="row"><span class="keys"><kbd>23.12.</kbd></span><span class="label">23 December, the nearest one</span></div>
       {:else}
         <div class="row"><span class="keys"><kbd>friday 5pm</kbd></span><span class="label">Weekday and time</span></div>
         <div class="row"><span class="keys"><kbd>tomorrow</kbd> <kbd>in 2 weeks</kbd></span><span class="label">Relative</span></div>

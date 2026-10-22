@@ -6,8 +6,8 @@ import { findDate, type DateLanguage } from "./dates";
 const REF = new Date(2026, 8, 27, 10, 0);
 
 /** The date found in `input` as "YYYY-MM-DD HH:MM" local time, or null. */
-function found(input: string, language: DateLanguage): string | null {
-  const result = findDate(input, language, REF);
+function found(input: string, language: DateLanguage, ref = REF): string | null {
+  const result = findDate(input, language, ref);
   if (!result) return null;
   const d = result.date;
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -66,21 +66,37 @@ describe("German (issue #26 table)", () => {
   });
 });
 
-describe("year-less dates (inNextYearThatFits)", () => {
+describe("year-less dates (inNearestYear)", () => {
   it.each([
     ["23.12.", "2026-12-23 12:00"],
     ["27.09.", "2026-09-27 12:00"], // today still counts
-    ["01.09.", "2027-09-01 12:00"], // passed this year
+    ["01.09.", "2026-09-01 12:00"], // passed less than 30 days ago: stays, in the past
+    ["01.08.", "2027-08-01 12:00"], // passed longer ago: next year
     ["Ende September", "2026-09-30 12:00"],
-    ["Mitte September", "2027-09-15 12:00"],
+    ["Mitte September", "2026-09-15 12:00"],
     ["Ende Februar 2028", "2028-02-29 12:00"], // explicit year, leap day
     ["KW 39", "2026-09-21 12:00"], // the current week, until its Sunday
-    ["KW 38", "2027-09-20 12:00"],
+    ["KW 38", "2026-09-14 12:00"], // ended a week ago: stays
+    ["KW 30", "2027-07-26 12:00"],
     ["KW 1", "2027-01-04 12:00"],
     ["KW44", "2026-10-26 12:00"],
     ["KW 53", "2026-12-28 12:00"],
   ])("%s -> %s", (input, expected) => {
     expect(found(input, "de")).toBe(expected);
+  });
+
+  it("applies to chrono's own dates without a year too", () => {
+    expect(found("Sep 25", "en")).toBe("2026-09-25 12:00");
+    expect(found("1 Aug", "en")).toBe("2027-08-01 12:00");
+    expect(found("25. September", "de")).toBe("2026-09-25 12:00");
+    expect(found("15 dec", "en")).toBe("2026-12-15 12:00");
+  });
+
+  it("reads a late-December date typed in early January as last year's", () => {
+    const january = new Date(2027, 0, 2, 10, 0);
+    expect(found("23.12.", "de", january)).toBe("2026-12-23 12:00");
+    expect(found("23 dec", "en", january)).toBe("2026-12-23 12:00");
+    expect(found("23.11.", "de", january)).toBe("2027-11-23 12:00");
   });
 
   it("finds nothing for dates that don't exist", () => {
@@ -165,10 +181,18 @@ describe("English", () => {
     expect(matchedText("mid-October report", "en")).toBe("mid-October");
   });
 
-  it("reads every sample line exactly like plain chrono did before", () => {
+  it("reads every sample line like plain chrono did before, except a just-passed date", () => {
+    // passed two days before REF: no longer a year ahead (#43)
+    const justPassed: Record<string, string> = {
+      "• Complete review skills Sep 25": "2026-09-25 12:00",
+    };
     expect(Object.keys(samples).length).toBeGreaterThan(5);
     for (const content of Object.values(samples)) {
       for (const line of content.split(/\r?\n/).filter(Boolean)) {
+        if (line in justPassed) {
+          expect(found(line, "en")).toBe(justPassed[line]);
+          continue;
+        }
         const before = chrono.en.parse(line, REF, { forwardDate: true })[0];
         const now = findDate(line, "en", REF);
         expect({ line, text: now?.text, time: now?.date.getTime() }).toEqual({
