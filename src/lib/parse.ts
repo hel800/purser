@@ -4,7 +4,7 @@ import { settings } from "./settings.svelte";
 export interface ParsedTodo {
   text: string;
   category: string | null;
-  dueAt: string | null; // ISO string
+  dueAt: string | null; // an instant or a day, see `DAY_ONLY`
   notes: string | null;
 }
 
@@ -39,7 +39,7 @@ export function parseTodo(input: string): ParsedTodo & { duePast: boolean } {
   const now = new Date();
   const found = findDate(text, dateLanguage(), now);
   if (found) {
-    dueAt = found.date.toISOString();
+    dueAt = dueValue(found);
     duePast = isPastOnEntry(found, now);
     text = (text.slice(0, found.index) + text.slice(found.index + found.text.length))
       .replace(/\s{2,}/g, " ")
@@ -82,7 +82,7 @@ export function parseDueEntry(input: string): { dueAt: string; past: boolean } |
   const now = new Date();
   const found = findDate(input, dateLanguage(), now);
   if (!found) return null;
-  return { dueAt: found.date.toISOString(), past: isPastOnEntry(found, now) };
+  return { dueAt: dueValue(found), past: isPastOnEntry(found, now) };
 }
 
 export function parseDueDate(input: string): string | null {
@@ -97,21 +97,65 @@ export function dateLanguage(): DateLanguage {
   return navigator.language.toLowerCase().startsWith("de") ? "de" : "en";
 }
 
-export function formatDue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
+/**
+ * A stored due date (`due_at`) is either an instant, an ISO string like
+ * "2026-10-16T15:00:00.000Z", when a time was typed, or a calendar day,
+ * "2026-10-16", when none was. A day has no time: it is shown without one
+ * and is overdue only once it has ended.
+ */
+const DAY_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** The value to store for a parsed date, see `DAY_ONLY`. */
+export function dueValue(found: FoundDate): string {
+  return found.timeKnown ? found.date.toISOString() : localDay(found.date);
+}
+
+/** "2026-10-16" for the local calendar day of `date`. */
+export function localDay(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function isDayOnly(due: string): boolean {
+  return DAY_ONLY.test(due);
+}
+
+/** When a due date begins: its instant, or 00:00 (local time) of its day. */
+function dueStart(due: string): Date {
+  const day = due.match(DAY_ONLY);
+  return day ? new Date(+day[1], +day[2] - 1, +day[3]) : new Date(due);
+}
+
+/** When a due date is over: its instant, or the end of its day. */
+function dueEnd(due: string): Date {
+  const end = dueStart(due);
+  if (isDayOnly(due)) end.setDate(end.getDate() + 1);
+  return end;
+}
+
+/** Due dates are shown in the date input language, the way they are typed:
+ *  "So., 11. Okt." for German, "Sun 11 Oct" for English. */
+function dueLocale(): string {
+  return dateLanguage() === "de" ? "de-DE" : "en-GB";
+}
+
+export function formatDue(due: string | null): string {
+  if (!due) return "";
+  const d = dueStart(due);
   const now = new Date();
   const sameYear = d.getFullYear() === now.getFullYear();
-  const date = d.toLocaleDateString(undefined, {
+  const date = d.toLocaleDateString(dueLocale(), {
     weekday: "short",
     day: "numeric",
     month: "short",
     ...(sameYear ? {} : { year: "numeric" }),
   });
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
+  // instants at midnight are imported days from before days were stored
+  // as such (Jira exports write 00:00)
+  const hasTime = !isDayOnly(due) && (d.getHours() !== 0 || d.getMinutes() !== 0);
   const time = hasTime
     ? " " +
-      d.toLocaleTimeString(undefined, {
+      d.toLocaleTimeString(dueLocale(), {
         hour: settings.hour24 ? "2-digit" : "numeric",
         minute: "2-digit",
         hour12: !settings.hour24,
@@ -134,37 +178,39 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
-export function isToday(iso: string): boolean {
-  return sameDay(new Date(iso), new Date());
+export function isToday(due: string): boolean {
+  return sameDay(dueStart(due), new Date());
 }
 
 /** Within the current calendar week, Monday 00:00 through Sunday 24:00. */
-export function isThisWeek(iso: string): boolean {
-  const due = new Date(iso).getTime();
+export function isThisWeek(due: string): boolean {
+  const begins = dueStart(due).getTime();
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   // getDay(): Sun=0 … Sat=6 — shift so the week starts on Monday
   start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
   const end = start.getTime() + 7 * 24 * 60 * 60 * 1000;
-  return due >= start.getTime() && due < end;
+  return begins >= start.getTime() && begins < end;
 }
 
 /**
  * Urgency of a due date:
- * - "overdue" — the moment has passed (red)
- * - "soon" — later today, or on the next working day (Mon–Fri) before 12:00 (yellow)
+ * - "overdue" — the moment, or for a day without a time the whole day, has
+ *   passed (red)
+ * - "soon" — later today, or on the next working day (Mon–Fri) before 12:00;
+ *   a day without a time there isn't (yellow)
  * - null — anything further out
  */
-export function dueStatus(iso: string | null): "overdue" | "soon" | null {
-  if (!iso) return null;
-  const due = new Date(iso);
+export function dueStatus(due: string | null): "overdue" | "soon" | null {
+  if (!due) return null;
   const now = new Date();
-  if (due.getTime() < now.getTime()) return "overdue";
-  if (sameDay(due, now)) return "soon";
+  if (dueEnd(due).getTime() < now.getTime()) return "overdue";
+  const begins = dueStart(due);
+  if (sameDay(begins, now)) return "soon";
   const nextWorkday = new Date(now);
   do {
     nextWorkday.setDate(nextWorkday.getDate() + 1);
   } while (nextWorkday.getDay() === 0 || nextWorkday.getDay() === 6);
-  if (sameDay(due, nextWorkday) && due.getHours() < 12) return "soon";
+  if (sameDay(begins, nextWorkday) && !isDayOnly(due) && begins.getHours() < 12) return "soon";
   return null;
 }
