@@ -83,8 +83,11 @@ describe("parseTodo", () => {
     expect(parseTodo("x 1 Sep").dueAt).toBe("2027-09-01");
   });
 
-  it("reads dotted dates in US order (pins current behaviour, see #43)", () => {
+  it("reads dotted dates in the date language's order", () => {
     expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-11-10");
+    settings.dateLanguage = "de";
+    expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-10-11");
+    expect(parseTodo("x 1.2.2026").dueAt).toBe("2026-02-01");
   });
 
   it("stores a date without a time as the day alone", () => {
@@ -156,6 +159,12 @@ describe("formatDue", () => {
 
   it("omits the time of an instant at midnight (older imported days)", () => {
     expect(formatDue(local(2026, 10, 16))).not.toMatch(/\d:\d\d/);
+  });
+
+  it("shows the date in the date input language", () => {
+    expect(formatDue("2026-10-16")).toMatch(/^Fri,? 16 Oct$/);
+    settings.dateLanguage = "de";
+    expect(formatDue("2026-10-16")).toMatch(/^Fr\., 16\. Okt\.$/);
   });
 
   it("follows the hour24 setting", () => {

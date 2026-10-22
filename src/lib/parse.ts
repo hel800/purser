@@ -133,12 +133,18 @@ function dueEnd(due: string): Date {
   return end;
 }
 
+/** Due dates are shown in the date input language, the way they are typed:
+ *  "So., 11. Okt." for German, "Sun 11 Oct" for English. */
+function dueLocale(): string {
+  return dateLanguage() === "de" ? "de-DE" : "en-GB";
+}
+
 export function formatDue(due: string | null): string {
   if (!due) return "";
   const d = dueStart(due);
   const now = new Date();
   const sameYear = d.getFullYear() === now.getFullYear();
-  const date = d.toLocaleDateString(undefined, {
+  const date = d.toLocaleDateString(dueLocale(), {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -149,7 +155,7 @@ export function formatDue(due: string | null): string {
   const hasTime = !isDayOnly(due) && (d.getHours() !== 0 || d.getMinutes() !== 0);
   const time = hasTime
     ? " " +
-      d.toLocaleTimeString(undefined, {
+      d.toLocaleTimeString(dueLocale(), {
         hour: settings.hour24 ? "2-digit" : "numeric",
         minute: "2-digit",
         hour12: !settings.hour24,

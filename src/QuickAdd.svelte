@@ -4,7 +4,7 @@
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { TAG_CHARS, parseTodo, formatDue } from "./lib/parse";
+  import { TAG_CHARS, dateLanguage, parseTodo, formatDue } from "./lib/parse";
   import { addTodo, listCategories, type Category } from "./lib/db";
   import { initSettings } from "./lib/settings.svelte";
   import Logo from "./lib/Logo.svelte";
@@ -202,7 +202,7 @@
       bind:value
       oninput={onInput}
       rows="1"
-      placeholder="pay rent friday 5pm #finance"
+      placeholder={dateLanguage() === "de" ? "pay rent Fr 17 Uhr #finance" : "pay rent friday 5pm #finance"}
       spellcheck="false"
     ></textarea>
     <span class="ghost" aria-hidden="true">

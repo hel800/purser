@@ -48,9 +48,10 @@ The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
   release-build launch; your choice sticks afterwards)
 - **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
   stored in `settings.json` next to the database
-- **Date input** — the language due dates are typed in: **Automatic**
-  (default, German on a German Windows, English otherwise), **English** or
-  **Deutsch**. Only one language is active at a time
+- **Date input** — the language due dates are typed and shown in:
+  **Automatic** (default, German on a German Windows, English otherwise),
+  **English** or **Deutsch**. Only one language is active at a time, and
+  dates are shown in it too (`Fri 16 Oct` or `Fr., 16. Okt.`)
 - **Check for updates automatically** — on by default; looks for a newer
   release at startup, once a day and when the popup opens. Off means only
   the tray's **Check for updates…** looks
@@ -77,6 +78,8 @@ water plants
     `So schnell es geht` stay text; with a time (`Fr 15 Uhr Zahnarzt`) they
     always count
   - Both: compact dates like `20261223`
+  - Numbers follow the language: `11.10.2026` is 11 October in German and
+    10 November in English (US order)
   - A date without a time (`friday`, `23.12.`) is just that day: it shows no
     time and only becomes overdue once the day is over
   - A date without a year (`10 Oct`, `23.12.`, `KW 44`) is this year's, or
