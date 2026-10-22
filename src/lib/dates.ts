@@ -10,8 +10,8 @@ export interface FoundDate {
   index: number;
   text: string;
   date: Date;
-  /** whether a time of day was typed; without one chrono fills in noon
-   *  (or the current time for "today") */
+  /** whether a time of day was typed; without one only the day counts
+   *  (`date` then holds chrono's noon, or the current time for "today") */
   timeKnown: boolean;
 }
 

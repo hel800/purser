@@ -77,6 +77,8 @@ water plants
     `So schnell es geht` stay text; with a time (`Fr 15 Uhr Zahnarzt`) they
     always count
   - Both: compact dates like `20261223`
+  - A date without a time (`friday`, `23.12.`) is just that day: it shows no
+    time and only becomes overdue once the day is over
   - A date without a year (`10 Oct`, `23.12.`, `KW 44`) is this year's, or
     next year's once this year's lies more than 30 days back. One that has
     just passed stays in the past and is flagged (see below) instead of
@@ -134,7 +136,7 @@ categories are never changed. Examples live in [`samples/import`](samples/import
   color (names must stay `#tag`-compatible: letters, digits, `_`, `-`)
 - Hover a todo row for pencils to edit its text and due date by mouse
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
-  next working day before 12:00
+  next working day before 12:00 (a day without a time: today)
 - A due date that is already over as you type it — a full date with the wrong
   year or day, `today 9am` in the afternoon, `yesterday`, `10 Oct` on 11 Oct —
   is shown in red
