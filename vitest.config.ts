@@ -48,7 +48,7 @@ export default mergeConfig(
         reporter: ["text", "html", "json-summary"],
         // raised by hand as tests are added, so coverage can only go up;
         // `vitest run --coverage` exits non-zero below these
-        thresholds: { lines: 27, statements: 27, functions: 35, branches: 29 },
+        thresholds: { lines: 36, statements: 36, functions: 46, branches: 33 },
       },
     },
   })
