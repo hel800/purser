@@ -4,9 +4,11 @@
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { TAG_CHARS, parseTodo, formatDue } from "./lib/parse";
+  import { parseTodo, formatDue } from "./lib/parse";
+  import { completeTag, tagAtCaret, tagGhost, tagSuggestions } from "./lib/quickadd";
   import { addTodo, listCategories, type Category } from "./lib/db";
   import { initSettings } from "./lib/settings.svelte";
+  import { quickAddKeyAction } from "./lib/keys";
   import Logo from "./lib/Logo.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
@@ -17,8 +19,6 @@
   let active = $state(0);
   let suppressSuggest = $state(false);
   let parsed = $derived(parseTodo(value));
-
-  const PARTIAL_TAG = new RegExp(`^${TAG_CHARS}*$`, "u");
 
   // Mirror the textarea's caret into state. Fired on input, clicks and
   // Home/End/arrow moves (selectionchange) — everything downstream (tag,
@@ -37,35 +37,12 @@
   });
 
   // The `#tag` fragment currently being typed, anchored at the caret.
-  let tag = $derived.by(() => {
-    if (suppressSuggest) return null;
-    const before = value.slice(0, caret);
-    const hash = before.lastIndexOf("#");
-    if (hash === -1) return null;
-    const partial = before.slice(hash + 1);
-    if (!PARTIAL_TAG.test(partial)) return null;
-    return { start: hash, partial };
-  });
+  let tag = $derived(suppressSuggest ? null : tagAtCaret(value, caret));
 
-  let suggestions = $derived.by(() => {
-    if (!tag || !tag.partial) return [];
-    const p = tag.partial.toLowerCase();
-    // an exact match needs no completion — offering it would make the keys
-    // below intercept navigation while nothing visible is suggested
-    return categories
-      .filter((c) => c.name.toLowerCase().startsWith(p) && c.name.toLowerCase() !== p)
-      .slice(0, 6);
-  });
+  let suggestions = $derived(tag ? tagSuggestions(categories, tag.partial) : []);
 
   // The grayed-out completion shown inline after the caret.
-  let ghost = $derived.by(() => {
-    if (!tag || !tag.partial) return "";
-    // only when the caret sits at the very end of the line
-    if (value.slice(caret).trim() !== "") return "";
-    const pick = suggestions[active];
-    if (!pick) return "";
-    return pick.name.slice(tag.partial.length);
-  });
+  let ghost = $derived(tagGhost(value, caret, tag, suggestions[active]));
 
   async function loadCategories() {
     categories = await listCategories();
@@ -75,9 +52,9 @@
     if (!tag) return;
     const pick = suggestions[active];
     if (!pick) return;
-    // keep the leading # that starts the tag
-    value = value.slice(0, tag.start + 1) + pick.name + value.slice(caret);
-    const pos = tag.start + 1 + pick.name.length;
+    const completed = completeTag(value, caret, tag, pick.name);
+    value = completed.value;
+    const pos = completed.caret;
     queueMicrotask(() => {
       inputEl.focus();
       inputEl.setSelectionRange(pos, pos);
@@ -140,49 +117,34 @@
   }
 
   async function onKeydown(e: KeyboardEvent) {
-    if (e.key === "F1") {
-      e.preventDefault();
-      invoke("open_help");
-      return;
-    }
-    // only intercept keys while a completion is actually visible
-    if (ghost) {
-      if (e.key === "Tab" || e.key === "ArrowRight") {
-        e.preventDefault();
+    const { action, preventDefault } = quickAddKeyAction(e.key, e.ctrlKey, ghost !== "");
+    if (preventDefault) e.preventDefault();
+    switch (action) {
+      case "help":
+        invoke("open_help");
+        break;
+      case "complete":
         complete();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
+        break;
+      case "nextSuggestion":
         active = Math.min(active + 1, suggestions.length - 1);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
+        break;
+      case "previousSuggestion":
         active = Math.max(active - 1, 0);
-        return;
-      }
-    }
-    if (e.key === "Tab") {
-      // without a completion Tab would move focus out of the input and
-      // eventually out of the window, hiding the widget — so it's a no-op
-      e.preventDefault();
-      return;
-    }
-    if (e.key === "Escape") {
-      await win.hide();
-    } else if (e.key === "Backspace" && e.ctrlKey) {
-      // default Ctrl+Backspace only deletes a word; clear everything
-      e.preventDefault();
-      value = "";
-    } else if (e.key === "Enter") {
-      // the textarea wraps visually only — Enter never inserts a newline
-      e.preventDefault();
-      if (parsed.text.length === 0) return;
-      await addTodo(parsed.text, parsed.category, parsed.dueAt, parsed.notes);
-      value = "";
-      await emit("purser://refresh");
-      await win.hide();
+        break;
+      case "hide":
+        await win.hide();
+        break;
+      case "clear":
+        value = "";
+        break;
+      case "save":
+        if (parsed.text.length === 0) return;
+        await addTodo(parsed.text, parsed.category, parsed.dueAt, parsed.notes);
+        value = "";
+        await emit("purser://refresh");
+        await win.hide();
+        break;
     }
   }
 </script>

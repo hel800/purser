@@ -35,9 +35,14 @@
     installUpdate,
     UPDATE_CHECK_INTERVAL_MS,
     UPDATE_RETRY_DELAYS_MS,
-    UPDATE_SHOW_CHECK_MIN_MS,
+    canStartInstall,
+    installPhase,
+    isInstalling,
+    shouldCheckOnShow,
     type UpdateInfo,
+    type UpdatePhase,
   } from "./lib/updater";
+  import { isPrintKey, popupKeyAction } from "./lib/keys";
   import Logo from "./lib/Logo.svelte";
   import Toast from "./lib/Toast.svelte";
   import wordmark from "./assets/purser-wordmark.png";
@@ -61,17 +66,7 @@
   let notesOpenId: number | null = $state(null);
   let notesEdit: { id: number; value: string } | null = $state(null);
 
-  // self-update banner under the header: offered → downloading → installing
-  // (the installer takes over and the app exits); "uptodate" is the brief
-  // answer to a manual check that found nothing; null = hidden
-  type UpdatePhase =
-    | "offer"
-    | "downloading"
-    | "installing"
-    | "error" // install failed; U retries
-    | "uptodate" // manual check: nothing new (brief)
-    | "checkfailed" // manual check: could not ask (brief)
-    | null;
+  // self-update banner under the header (see UpdatePhase)
   let update: UpdateInfo | null = $state(null);
   let updatePhase: UpdatePhase = $state(null);
   let updateProgress: number | null = $state(null);
@@ -163,7 +158,7 @@
    * or why it could not ask, for a few seconds.
    */
   async function lookForUpdate(manual = false) {
-    if (updatePhase === "downloading" || updatePhase === "installing") return;
+    if (isInstalling(updatePhase)) return;
     // automatic checks respect the setting; the tray's manual check always runs
     if (!manual && !settings.autoUpdateCheck) return;
     lastUpdateCheck = Date.now();
@@ -195,7 +190,7 @@
     try {
       await installUpdate((percent) => {
         updateProgress = percent;
-        if (percent === 100) updatePhase = "installing";
+        updatePhase = installPhase(percent);
       });
     } catch (e) {
       updatePhase = "error";
@@ -232,7 +227,7 @@
       // manual check arriving right behind this event (tray "Check for
       // updates…" on a hidden popup) counts as that check instead of a second one
       setTimeout(() => {
-        if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
+        if (shouldCheckOnShow(updatePhase, lastUpdateCheck, Date.now())) lookForUpdate();
       }, 1000);
       const state = e.payload;
       const nextView = state?.view ?? "open";
@@ -528,7 +523,7 @@
   // full-size view instead. Capture phase, because the edit inputs stop
   // their keys from bubbling to the window.
   function blockPrint(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    if (isPrintKey(e)) {
       e.preventDefault();
       e.stopPropagation();
       printToast?.flash();
@@ -552,111 +547,64 @@
       await onCatMenuKeydown(e);
       return;
     }
-    switch (e.key) {
-      case "Escape":
+    const { action, preventDefault } = popupKeyAction(e.key, {
+      view,
+      hasSelection: flat[selected] !== undefined,
+      canInstallUpdate: canStartInstall(updatePhase),
+    });
+    if (preventDefault) e.preventDefault();
+    const t = flat[selected];
+    switch (action) {
+      case "hide":
         await win.hide();
         break;
-      case "ArrowDown":
-      case "j":
-        e.preventDefault();
+      case "down":
         if (flat.length) selected = Math.min(selected + 1, flat.length - 1);
         break;
-      case "ArrowUp":
-      case "k":
-        e.preventDefault();
+      case "up":
         if (flat.length) selected = Math.max(selected - 1, 0);
         break;
-      case "Enter":
-        // a previously clicked button (tab, pen, wordmark…) may still hold
-        // focus — block its default Enter activation, only toggle the todo
-        e.preventDefault();
+      case "toggleDone":
         await toggleSelected();
         break;
-      case "d": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startDueEdit(selected, t);
-        }
+      case "editDue":
+        if (t) startDueEdit(selected, t);
         break;
-      }
-      case "e":
-      case "F2": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startTextEdit(selected, t);
-        }
+      case "editText":
+        if (t) startTextEdit(selected, t);
         break;
-      }
-      case "c": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          openCatMenu(selected, t);
-        }
+      case "editCategory":
+        if (t) openCatMenu(selected, t);
         break;
-      }
-      case "t": {
-        if (view === "open") {
-          e.preventDefault();
-          cycleCat();
-        }
+      case "editNotes":
+        if (t) startNotesEdit(selected, t);
         break;
-      }
-      case "f": {
-        if (view === "open") {
-          e.preventDefault();
-          cycleDue();
-        }
+      case "cycleCategory":
+        cycleCat();
         break;
-      }
-      case " ": {
-        // also blocks a focused button from being space-activated
-        e.preventDefault();
-        const t = flat[selected];
+      case "cycleDue":
+        cycleDue();
+        break;
+      case "toggleNotes":
         if (t?.notes) notesOpenId = notesOpenId === t.id ? null : t.id;
         break;
-      }
-      case "n": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startNotesEdit(selected, t);
-        }
-        break;
-      }
-      case "Delete": {
-        const t = flat[selected];
-        if (t && view === "done") {
+      case "delete":
+        if (t) {
           await deleteTodo(t.id);
           await reload();
         }
         break;
-      }
-      case "Tab":
-        e.preventDefault();
+      case "switchView":
         await switchView(view === "open" ? "done" : "open");
         break;
-      case "l":
+      case "fullView":
         // swap to the full-size view, keeping view and filters
-        e.preventDefault();
         invoke("open_list", { state: { view, catFilter, dueFilter } satisfies ViewState });
         break;
-      case "u":
-        // install (or retry) the update the banner offers; Esc stays the
-        // window's, so the banner survives hiding the popup
-        if (updatePhase === "offer" || updatePhase === "error") {
-          e.preventDefault();
-          await startUpdate();
-        }
+      case "installUpdate":
+        await startUpdate();
         break;
-      case "?":
-        e.preventDefault();
-        openHelp();
-        break;
-      case "F1":
-        e.preventDefault();
+      case "help":
         openHelp();
         break;
     }
