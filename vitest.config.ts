@@ -31,6 +31,8 @@ export default mergeConfig(
             name: "dom",
             environment: "jsdom",
             include: ["src/**/*.svelte.test.ts"],
+            // in addition to the shared setup.ts
+            setupFiles: ["src/test/dom.ts"],
           },
         },
       ],
