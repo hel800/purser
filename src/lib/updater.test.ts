@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { emit } from "@tauri-apps/api/event";
 import { argsOf, installIpc } from "../test/ipc";
-import { checkForUpdate, installUpdate } from "./updater";
+import {
+  canStartInstall,
+  checkForUpdate,
+  installPhase,
+  installUpdate,
+  isInstalling,
+  shouldCheckOnShow,
+  UPDATE_SHOW_CHECK_MIN_MS,
+} from "./updater";
 
 describe("checkForUpdate", () => {
   it("returns the update the backend found, or null", async () => {
@@ -50,5 +58,34 @@ describe("installUpdate", () => {
     await expect(installUpdate((p) => progress.push(p))).rejects.toThrow("bad signature");
     await emit("purser://update-progress", 7);
     expect(progress).toEqual([]);
+  });
+});
+
+describe("update phases", () => {
+  it("knows when an install is running", () => {
+    expect(isInstalling("downloading")).toBe(true);
+    expect(isInstalling("installing")).toBe(true);
+    expect(isInstalling("offer")).toBe(false);
+    expect(isInstalling(null)).toBe(false);
+  });
+
+  it("offers an install for a found update or a failed one", () => {
+    expect(canStartInstall("offer")).toBe(true);
+    expect(canStartInstall("error")).toBe(true);
+    expect(canStartInstall("downloading")).toBe(false);
+    expect(canStartInstall(null)).toBe(false);
+  });
+
+  it("switches to installing once the download is complete", () => {
+    expect(installPhase(null)).toBe("downloading");
+    expect(installPhase(99)).toBe("downloading");
+    expect(installPhase(100)).toBe("installing");
+  });
+
+  it("checks on show only without a banner and after an hour", () => {
+    const now = 10 * UPDATE_SHOW_CHECK_MIN_MS;
+    expect(shouldCheckOnShow(null, now - UPDATE_SHOW_CHECK_MIN_MS - 1, now)).toBe(true);
+    expect(shouldCheckOnShow(null, now - UPDATE_SHOW_CHECK_MIN_MS, now)).toBe(false);
+    expect(shouldCheckOnShow("offer", 0, now)).toBe(false);
   });
 });
