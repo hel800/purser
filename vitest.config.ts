@@ -48,9 +48,8 @@ export default mergeConfig(
           "src/{about,help,list,popup,quickadd}.ts",
         ],
         reporter: ["text", "html", "json-summary"],
-        // raised by hand as tests are added, so coverage can only go up;
-        // `vitest run --coverage` exits non-zero below these
-        thresholds: { lines: 45, statements: 44, functions: 52, branches: 50 },
+        // the CI gate: `vitest run --coverage` exits non-zero below these
+        thresholds: { lines: 90, statements: 90, functions: 90, branches: 90 },
       },
     },
   })
