@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { freezeAt } from "../test/clock";
 import { ImportError, parseImport, parseImportLine } from "./import";
 import { todoKey } from "./db";
 import { settings } from "./settings.svelte";
@@ -22,12 +23,10 @@ function sample(name: string): string {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(NOW);
+  freezeAt(NOW);
   // "auto" would follow the machine's language; the samples are English
   settings.dateLanguage = "en";
 });
-afterEach(() => vi.useRealTimers());
 
 describe("parseImportLine", () => {
   it("strips bullets, moves URLs to the note, takes a trailing note #tag as category", () => {

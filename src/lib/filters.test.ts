@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { freezeAt } from "../test/clock";
 import type { Todo } from "./db";
 import {
   DUE_CYCLE,
@@ -42,11 +43,7 @@ const todos = [
   todo(4, { ...home, due_at: local(2026, 10, 20, 12) }), // next week
 ];
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(NOW);
-});
-afterEach(() => vi.useRealTimers());
+beforeEach(() => freezeAt(NOW));
 
 describe("category filter", () => {
   it("cycles all -> categories in list order (-1 = none)", () => {
