@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { freezeAt } from "../test/clock";
-import { ImportError, parseImport, parseImportLine } from "./import";
-import { todoKey } from "./db";
+import { ImportError, parseImport, parseImportLine, runImport } from "./import";
+import { addTodo, doneTodos, markDone, openTodos, todoKey } from "./db";
+import { argsOf, installIpc, type IpcCall, type IpcHandler } from "../test/ipc";
+import { createDatabase, sqlHandlers } from "../test/sqlite";
 import { settings } from "./settings.svelte";
 
 /** Sun 11 Oct 2026 13:02:05, Europe/Berlin (TZ is pinned in vitest.config.ts). */
@@ -169,5 +171,117 @@ describe("todoKey", () => {
     expect(todoKey("a", "Work", null, "")).toBe(todoKey("a", "work", null, null));
     expect(todoKey("a", null, null, null)).not.toBe(todoKey("a", "work", null, null));
     expect(todoKey("a", null, "2026-10-12T10:00:00.000Z", null)).not.toBe(todoKey("a", null, null, null));
+  });
+});
+
+describe("runImport", () => {
+  let calls: IpcCall[];
+  let confirm: boolean;
+
+  function backend(overrides: Record<string, IpcHandler> = {}) {
+    calls = installIpc({
+      ...sqlHandlers(createDatabase()),
+      confirm_import: () => confirm,
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    confirm = true;
+    backend();
+  });
+
+  const finished = () => argsOf(calls, "import_finished");
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `todo ${i + 1}`).join("\n");
+
+  it("acknowledges the request, imports and reports the counts", async () => {
+    await runImport({ fileName: "a.txt", csv: false, content: "call bob #work\nhttps://only.example\nbuy milk" });
+    expect(calls[0].cmd).toBe("import_started");
+    expect(argsOf(calls, "confirm_import")).toEqual([]);
+    expect((await openTodos()).map((t) => t.text).sort()).toEqual(["buy milk", "call bob"]);
+    expect(finished()).toEqual([
+      { fileName: "a.txt", imported: 2, skipped: 1, duplicates: 0, cancelled: false, error: null },
+    ]);
+  });
+
+  it("leaves out copies of stored todos, open or done, and of earlier lines", async () => {
+    await addTodo("open one", "Work", null);
+    await addTodo("done one", null, null);
+    await markDone((await openTodos()).find((t) => t.text === "done one")!.id);
+    await runImport({
+      fileName: "a.txt",
+      csv: false,
+      content: "open one #WORK\ndone one\nnew one\nnew one\nopen one",
+    });
+    expect((await openTodos()).map((t) => t.text).sort()).toEqual(["new one", "open one", "open one"]);
+    expect(await doneTodos()).toHaveLength(1);
+    expect(finished()[0]).toMatchObject({ imported: 2, duplicates: 3 });
+  });
+
+  it("asks before importing more than 50 todos", async () => {
+    await runImport({ fileName: "big.txt", csv: false, content: lines(51) });
+    expect(argsOf(calls, "confirm_import")).toEqual([{ fileName: "big.txt", count: 51 }]);
+    expect(await openTodos()).toHaveLength(51);
+    expect(finished()[0]).toMatchObject({ imported: 51, cancelled: false });
+  });
+
+  it("doesn't ask for exactly 50", async () => {
+    await runImport({ fileName: "a.txt", csv: false, content: lines(50) });
+    expect(argsOf(calls, "confirm_import")).toEqual([]);
+  });
+
+  it("imports nothing when the large import is declined", async () => {
+    confirm = false;
+    await runImport({ fileName: "big.txt", csv: false, content: lines(51) });
+    expect(await openTodos()).toEqual([]);
+    expect(finished()).toEqual([
+      { fileName: "big.txt", imported: 0, skipped: 0, duplicates: 0, cancelled: true, error: null },
+    ]);
+  });
+
+  it("reports a broken file and imports nothing", async () => {
+    await runImport({ fileName: "bad.csv", csv: true, content: sample("invalid/broken-quote.csv") });
+    expect(await openTodos()).toEqual([]);
+    expect(finished()).toEqual([
+      expect.objectContaining({
+        fileName: "bad.csv",
+        imported: 0,
+        cancelled: false,
+        error: expect.stringMatching(/quote opened in line 2/),
+      }),
+    ]);
+  });
+
+  it("reports a non-Error failure as text", async () => {
+    backend({
+      import_started: () => {
+        throw "backend gone";
+      },
+    });
+    await runImport({ fileName: "a.txt", csv: false, content: "a" });
+    expect(finished()[0]).toMatchObject({ error: "backend gone", imported: 0 });
+  });
+
+  it("reports how many landed before an insert failed", async () => {
+    const sql = sqlHandlers(createDatabase());
+    let inserts = 0;
+    backend({
+      ...sql,
+      "plugin:sql|execute": (args) => {
+        if (String(args.query).startsWith("INSERT INTO todos") && ++inserts === 2) throw new Error("disk full");
+        return sql["plugin:sql|execute"](args);
+      },
+    });
+    await runImport({ fileName: "huge.txt", csv: false, content: lines(600) });
+    expect(finished()[0]).toMatchObject({ imported: 500, error: "disk full" });
+  });
+
+  it("doesn't throw when the result can't be reported", async () => {
+    backend({
+      import_finished: () => {
+        throw new Error("gone");
+      },
+    });
+    await expect(runImport({ fileName: "a.txt", csv: false, content: "a" })).resolves.toBeUndefined();
   });
 });
