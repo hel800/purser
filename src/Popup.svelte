@@ -4,7 +4,16 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, parseDueEntry, linkify } from "./lib/parse";
+  import {
+    buildCatMenuItems,
+    catMenuChoice,
+    catMenuKeyAction,
+    categoryGhost,
+    isNewCategoryValid,
+    isRenameValid,
+    moveCatMenuCursor,
+  } from "./lib/catmenu";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
     filterTodos,
@@ -99,48 +108,16 @@
   }
 
   // valid = tag-compatible charset and not a duplicate of another category
-  let catNameValid = $derived.by(() => {
-    if (!catEdit) return true;
-    const name = catEdit.name.trim();
-    if (!isValidCategoryName(name)) return false;
-    const lower = name.toLowerCase();
-    return !allCategories.some((c) => c.id !== catEdit!.id && c.name.toLowerCase() === lower);
-  });
-
-  interface CatMenuItem {
-    kind: "cat" | "none";
-    name?: string;
-    color?: string;
-    key: string;
-  }
+  let catNameValid = $derived.by(() => !catEdit || isRenameValid(catEdit.name, catEdit.id, allCategories));
 
   // the pick list below the "new category" input: every category, then a
   // "No category" row to remove the assignment
-  let catMenuItems = $derived.by(() => {
-    const items: CatMenuItem[] = [];
-    for (const c of allCategories) {
-      items.push({ kind: "cat", name: c.name, color: c.color, key: `c${c.id}` });
-    }
-    items.push({ kind: "none", key: "none" });
-    return items;
-  });
+  let catMenuItems = $derived(buildCatMenuItems(allCategories));
 
-  // a new-category name needs text and must round-trip through #tag syntax
-  let catMenuCreateValid = $derived.by(() => {
-    const v = catMenuValue.trim();
-    return v.length > 0 && isValidCategoryName(v);
-  });
+  let catMenuCreateValid = $derived(isNewCategoryValid(catMenuValue));
 
   // grayed-out completion of a unique existing category while typing
-  let catMenuGhost = $derived.by(() => {
-    if (!catMenu || catMenuActive !== 0) return "";
-    const v = catMenuValue;
-    if (!v || !isValidCategoryName(v)) return "";
-    const lower = v.toLowerCase();
-    if (allCategories.some((c) => c.name.toLowerCase() === lower)) return ""; // already complete
-    const match = allCategories.find((c) => c.name.toLowerCase().startsWith(lower));
-    return match ? match.name.slice(v.length) : "";
-  });
+  let catMenuGhost = $derived(catMenu && catMenuActive === 0 ? categoryGhost(catMenuValue, allCategories) : "");
 
   // live preview of the due-date editor; `past` warns about a date that is
   // already over as it is typed (likely a typo) — Enter still saves it
@@ -486,7 +463,7 @@
   }
 
   function catMenuMove(dir: 1 | -1) {
-    catMenuActive = Math.min(Math.max(catMenuActive + dir, 0), catMenuItems.length);
+    catMenuActive = moveCatMenuCursor(catMenuActive, dir, catMenuItems.length);
     // keyboard navigation moves focus so typing lands in the list (j/k nav)
     // instead of the "new category" input
     if (catMenuActive === 0) catMenuInput?.focus();
@@ -501,65 +478,41 @@
 
   async function catMenuChoose(activeIndex: number) {
     if (!catMenu) return;
-    // row 0 is the "new category" input — Enter creates it (empty names ignored)
     if (activeIndex === 0) {
       catMenuActive = 0;
       catMenuInput?.focus();
-      if (!catMenuCreateValid) return;
-      await updateTodoCategory(catMenu.id, catMenuValue.trim());
-      closeCatMenu();
-      await reload();
-      return;
     }
-    const item = catMenuItems[activeIndex - 1];
-    if (!item) return;
-    await updateTodoCategory(catMenu.id, item.kind === "none" ? null : (item.name ?? null));
+    // row 0 is the "new category" input — Enter creates it (empty names ignored)
+    const category = catMenuChoice(activeIndex, catMenuItems, catMenuValue);
+    if (category === undefined) return;
+    await updateTodoCategory(catMenu.id, category);
     closeCatMenu();
     await reload();
   }
 
   async function onCatMenuKeydown(e: KeyboardEvent) {
     if (!catMenu) return;
-    switch (e.key) {
-      case "Escape":
+    const action = catMenuKeyAction(e.key, {
+      active: catMenuActive,
+      // arrow keys and j/k move focus to the row (see catMenuMove)
+      typing: document.activeElement === catMenuInput && catMenuCreateValid,
+      ghost: catMenuGhost,
+    });
+    if (!action) return;
+    // Esc only closes the menu; every other menu key is the menu's alone
+    if (action.type !== "close") e.preventDefault();
+    switch (action.type) {
+      case "close":
         closeCatMenu();
         break;
-      case "ArrowDown":
-        e.preventDefault();
-        catMenuMove(1);
+      case "move":
+        catMenuMove(action.dir);
         break;
-      case "ArrowUp":
-        e.preventDefault();
-        catMenuMove(-1);
+      case "choose":
+        await catMenuChoose(action.row);
         break;
-      case "j":
-      case "k":
-        // only navigate while the list is active — inside the input these
-        // must type normally
-        if (catMenuActive !== 0) {
-          e.preventDefault();
-          catMenuMove(e.key === "j" ? 1 : -1);
-        }
-        break;
-      case "Enter": {
-        e.preventDefault();
-        // a typed valid name wins over a row the mouse merely hovers, but not
-        // over one the user moved to on purpose: arrow keys and j/k give the
-        // row focus (see catMenuMove), hovering leaves the input focused
-        const typing = document.activeElement === catMenuInput && catMenuCreateValid;
-        await catMenuChoose(typing ? 0 : catMenuActive);
-        break;
-      }
-      case "Tab":
-        // accept the grayed-out completion instead of tabbing away
-        e.preventDefault();
+      case "acceptGhost":
         acceptCatMenuGhost();
-        break;
-      case "ArrowRight":
-        if (catMenuActive === 0 && catMenuGhost) {
-          e.preventDefault();
-          acceptCatMenuGhost();
-        }
         break;
     }
   }
