@@ -155,12 +155,21 @@ export async function existingTodoKeys(): Promise<Set<string>> {
   return new Set(rows.map((t) => todoKey(t.text, t.category_name, t.due_at, t.notes)));
 }
 
+/**
+ * Sort key of `due_at`: an instant as stored, a day without a time
+ * ("2026-10-16") as the end of that local day in the same UTC form, so it
+ * comes after the timed todos of its day.
+ */
+const DUE_SORT = `CASE WHEN length(t.due_at) = 10
+      THEN strftime('%Y-%m-%dT%H:%M:%fZ', t.due_at || ' 23:59:59.999', 'utc')
+      ELSE t.due_at END`;
+
 export async function openTodos(): Promise<Todo[]> {
   const d = await getDb();
   return d.select<Todo[]>(
     `SELECT ${COLUMNS} ${FROM}
       WHERE t.done_at IS NULL
-      ORDER BY c.name IS NULL, c.name COLLATE NOCASE, t.due_at IS NULL, t.due_at`
+      ORDER BY c.name IS NULL, c.name COLLATE NOCASE, t.due_at IS NULL, ${DUE_SORT}`
   );
 }
 

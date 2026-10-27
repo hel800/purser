@@ -10,15 +10,16 @@ export interface FoundDate {
   index: number;
   text: string;
   date: Date;
-  /** whether a time of day was typed; without one chrono fills in noon
-   *  (or the current time for "today") */
+  /** whether a time of day was typed; without one only the day counts
+   *  (`date` then holds chrono's noon, or the current time for "today") */
   timeKnown: boolean;
 }
 
 /**
  * Finds the first date expression in `text`, e.g. "friday 5pm" (English) or
  * "Fr 15 Uhr" (German). Compact ISO dates like "20261223" work in both
- * languages. Dates lie in the future (`forwardDate`).
+ * languages. A weekday lies ahead ("friday") unless it is a past one ("last
+ * friday"), and a date without a year takes the nearest year (`inNearestYear`).
  */
 export function findDate(text: string, language: DateLanguage, ref: Date = new Date()): FoundDate | null {
   const parser = language === "de" ? german : english;
@@ -116,22 +117,33 @@ function components(date: Date) {
   return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
 }
 
+/** How many days a date typed without a year may lie in the past and still
+ *  mean this year's, see `inNearestYear`. */
+const RECENT_PAST_DAYS = 30;
+
 /**
- * The year rule for dates typed without one ("23.12.", "Ende Oktober",
- * "KW 44"), kept in one place: this year's date, or next year's once this
- * year's has passed. `dateIn` gives the date for a year (null if that year
- * has none, e.g. 29.02.); the date counts as passed after `lastDayOf` it,
- * which is the date itself or, for a calendar week, its Sunday.
+ * The year rule for dates typed without one ("23.12.", "10 Oct", "Ende
+ * Oktober", "KW 44"), kept in one place: the nearest such date that ended at
+ * most `RECENT_PAST_DAYS` ago. That is this year's date, next year's once
+ * this year's lies further back, and last year's for a late-December date
+ * typed in early January. A date that has only just passed is most likely a
+ * typo or entered late; it stays in the past, where the past-date warning
+ * flags it, instead of jumping almost a year ahead without a word.
+ * `dateIn` gives the date for a year (null if that year has none, e.g.
+ * 29.02.); the date ends on `lastDayOf` it, which is the date itself or, for
+ * a calendar week, its Sunday.
  */
-function inNextYearThatFits(
-  context: ParsingContext,
+function inNearestYear(
+  ref: Date,
   dateIn: (year: number) => Date | null,
   lastDayOf: (date: Date) => Date = (date) => date
 ) {
-  const today = startOfDay(context.refDate);
-  for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
-    const date = dateIn(year);
-    if (date && lastDayOf(date) >= today) return components(date);
+  const earliest = startOfDay(ref);
+  earliest.setDate(earliest.getDate() - RECENT_PAST_DAYS);
+  const year = ref.getFullYear();
+  for (const candidate of [year - 1, year, year + 1]) {
+    const date = dateIn(candidate);
+    if (date && lastDayOf(date) >= earliest) return components(date);
   }
   return null;
 }
@@ -150,9 +162,9 @@ const compactIsoParser: Parser = {
 };
 
 /**
- * German "23.12.": the next 23 Dec, today included. A four-digit number after
- * it ("23.12. 2026") is the year only if it is this year or next year. Any
- * other number is left for `compactTimeRefiner`, so "23.12. 1500" and
+ * German "23.12.": the nearest 23 Dec (`inNearestYear`). A four-digit number
+ * after it ("23.12. 2026") is the year only if it is this year or next year.
+ * Any other number is left for `compactTimeRefiner`, so "23.12. 1500" and
  * "23.12. 2030" read as times.
  */
 const dayMonthParser: Parser = {
@@ -168,7 +180,7 @@ const dayMonthParser: Parser = {
       const date = validDate(typedYear, month, day);
       return date ? components(date) : null;
     }
-    const yearLess = inNextYearThatFits(context, (year) => validDate(year, month, day));
+    const yearLess = inNearestYear(context.refDate, (year) => validDate(year, month, day));
     if (!yearLess) return null;
     const dayMonthText = `${match[1]}.${match[2]}.`;
     return context.createParsingResult(match.index!, dayMonthText, yearLess);
@@ -201,7 +213,7 @@ function monthPartParser(parts: Record<string, MonthPart>, months: Record<string
         return new Date(year, month, 0); // day 0 of the next month = last day
       };
       if (match[3]) return components(dayIn(Number(match[3])));
-      return inNextYearThatFits(context, dayIn);
+      return inNearestYear(context.refDate, dayIn);
     },
   };
 }
@@ -224,6 +236,45 @@ function comingWeekdayParser(comingWords: string, weekdays: Record<string, numbe
     },
   };
 }
+
+/**
+ * "last Friday" / "letzten Freitag": the most recent such weekday before
+ * today, which the past-date warning then flags. chrono rolls "last Friday"
+ * forward to the coming one (`forwardDate`) and reads only the "Freitag" of
+ * "vergangenen Freitag".
+ */
+function lastWeekdayParser(lastWords: string, weekdays: Record<string, number>): Parser {
+  return {
+    pattern: () =>
+      new RegExp(`(?:${lastWords})\\s+(${alternation(weekdays)})${NOT_BEFORE_WORD}`, "iu"),
+    extract: (context, match) => {
+      const today = startOfDay(context.refDate);
+      const weekday = weekdays[match[1].toLowerCase()];
+      const daysBack = (today.getDay() - weekday + 7) % 7 || 7;
+      today.setDate(today.getDate() - daysBack);
+      return components(today);
+    },
+  };
+}
+
+/**
+ * chrono's own dates without a year ("10 Oct", "10. Oktober") get theirs from
+ * `forwardDate`, which moves a date that passed yesterday a whole year ahead.
+ * They follow `inNearestYear` like Purser's own formats.
+ */
+const nearestYearRefiner: Refiner = {
+  refine: (context, results) => {
+    for (const { start } of results) {
+      const month = start.get("month");
+      const day = start.get("day");
+      if (start.isCertain("year") || !start.isCertain("month") || !start.isCertain("day")) continue;
+      if (month === null || day === null) continue;
+      const nearest = inNearestYear(context.refDate, (year) => validDate(year, month, day));
+      if (nearest) start.imply("year", nearest.year);
+    }
+    return results;
+  },
+};
 
 /** Monday of ISO calendar week 1 — the week that contains 4 January. */
 function mondayOfWeekOne(year: number): Date {
@@ -254,7 +305,7 @@ const calendarWeekParser: Parser = {
     }
     const sundayOf = (monday: Date) =>
       new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-    return inNextYearThatFits(context, (year) => mondayOfIsoWeek(year, week), sundayOf);
+    return inNearestYear(context.refDate, (year) => mondayOfIsoWeek(year, week), sundayOf);
   },
 };
 
@@ -330,7 +381,10 @@ function buildEnglish(): chrono.Chrono {
       comingWeekdayParser("coming", ENGLISH_WEEKDAYS),
     ].map(atWordStart)
   );
+  // first, so it wins over chrono's own reading of the same words
+  parser.parsers.unshift(atWordStart(lastWeekdayParser("last|previous", ENGLISH_WEEKDAYS)));
   letCompactIsoThrough(parser);
+  parser.refiners.push(nearestYearRefiner);
   return parser;
 }
 
@@ -345,8 +399,17 @@ function buildGerman(): chrono.Chrono {
       comingWeekdayParser("kommende[nrs]?", GERMAN_WEEKDAYS),
     ].map(atWordStart)
   );
+  // first, so it wins over chrono's own reading of the same words
+  parser.parsers.unshift(
+    atWordStart(lastWeekdayParser("letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?", GERMAN_WEEKDAYS))
+  );
   letCompactIsoThrough(parser);
-  parser.refiners.push(englishMeridiemFilter, compactTimeRefiner, weekdayAbbreviationFilter);
+  parser.refiners.push(
+    englishMeridiemFilter,
+    compactTimeRefiner,
+    weekdayAbbreviationFilter,
+    nearestYearRefiner
+  );
   return parser;
 }
 

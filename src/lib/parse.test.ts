@@ -77,13 +77,29 @@ describe("parseTodo", () => {
     expect(parseTodo("call bob friday").duePast).toBe(false);
   });
 
-  it("rolls dates without a year forward", () => {
-    expect(parseTodo("x 10 Oct").dueAt).toBe(local(2027, 10, 10, 12));
-    expect(parseTodo("x jan 1").dueAt).toBe(local(2027, 1, 1, 12));
+  it("keeps a date without a year that just passed in the past, rolls older ones forward", () => {
+    expect(parseTodo("sdfj 10 Oct")).toMatchObject({ text: "sdfj", dueAt: "2026-10-10", duePast: true });
+    expect(parseTodo("x jan 1").dueAt).toBe("2027-01-01");
+    expect(parseTodo("x 1 Sep").dueAt).toBe("2027-09-01");
   });
 
-  it("reads dotted dates in US order (pins current behaviour, see #43)", () => {
-    expect(parseTodo("x 11.10.2026").dueAt).toBe(local(2026, 11, 10, 12));
+  it("reads dotted dates in the date language's order", () => {
+    expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-11-10");
+    settings.dateLanguage = "de";
+    expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-10-11");
+    expect(parseTodo("x 1.2.2026").dueAt).toBe("2026-02-01");
+  });
+
+  it("stores a date without a time as the day alone", () => {
+    expect(parseTodo("x friday").dueAt).toBe("2026-10-16");
+    expect(parseTodo("x today").dueAt).toBe("2026-10-11");
+    expect(parseTodo("x in 2 weeks").dueAt).toBe("2026-10-25");
+    expect(parseTodo("x friday 5pm").dueAt).toBe(local(2026, 10, 16, 17));
+    expect(parseTodo("x in 2 hours").dueAt).toBe(local(2026, 10, 11, 15, 2, 5));
+  });
+
+  it("never puts last friday in the future", () => {
+    expect(parseTodo("x last friday")).toMatchObject({ dueAt: "2026-10-09", duePast: true });
   });
 });
 
@@ -134,14 +150,21 @@ describe("formatDue", () => {
     expect(formatDue(null)).toBe("");
   });
 
-  it("omits the time at midnight and the year for this year", () => {
-    const s = formatDue(local(2026, 10, 16));
+  it("shows a day without a time, and the year only for other years", () => {
+    const s = formatDue("2026-10-16");
     expect(s).not.toMatch(/\d:\d\d/);
     expect(s).not.toContain("2026");
+    expect(formatDue("2027-01-01")).toContain("2027");
   });
 
-  it("shows the year for other years", () => {
-    expect(formatDue(local(2027, 1, 1))).toContain("2027");
+  it("omits the time of an instant at midnight (older imported days)", () => {
+    expect(formatDue(local(2026, 10, 16))).not.toMatch(/\d:\d\d/);
+  });
+
+  it("shows the date in the date input language", () => {
+    expect(formatDue("2026-10-16")).toMatch(/^Fri,? 16 Oct$/);
+    settings.dateLanguage = "de";
+    expect(formatDue("2026-10-16")).toMatch(/^Fr\., 16\. Okt\.$/);
   });
 
   it("follows the hour24 setting", () => {
@@ -192,12 +215,24 @@ describe("dueStatus (now is Sunday 13:02)", () => {
     expect(dueStatus(local(2026, 10, 17, 9))).toBeNull(); // Saturday
     expect(dueStatus(local(2026, 10, 19, 9))).toBe("soon"); // Monday
   });
+
+  it("makes a day without a time overdue only once it has ended", () => {
+    expect(dueStatus("2026-10-11")).toBe("soon"); // today, although past noon
+    expect(dueStatus("2026-10-10")).toBe("overdue");
+    expect(dueStatus("2026-10-12")).toBeNull(); // next working day, but no time before noon
+    freezeAt(new Date(2026, 9, 11, 23, 59, 59));
+    expect(dueStatus("2026-10-11")).toBe("soon");
+    freezeAt(new Date(2026, 9, 12, 0, 0, 1));
+    expect(dueStatus("2026-10-11")).toBe("overdue");
+  });
 });
 
 describe("isToday / isThisWeek (Mon 5 Oct – Sun 11 Oct)", () => {
   it("compares calendar days in local time", () => {
     expect(isToday(local(2026, 10, 11, 0, 0, 1))).toBe(true);
     expect(isToday(local(2026, 10, 12))).toBe(false);
+    expect(isToday("2026-10-11")).toBe(true);
+    expect(isToday("2026-10-12")).toBe(false);
   });
 
   it("starts the week on Monday", () => {
@@ -205,5 +240,8 @@ describe("isToday / isThisWeek (Mon 5 Oct – Sun 11 Oct)", () => {
     expect(isThisWeek(local(2026, 10, 4, 23, 59))).toBe(false);
     expect(isThisWeek(local(2026, 10, 11, 23, 59))).toBe(true);
     expect(isThisWeek(local(2026, 10, 12))).toBe(false);
+    expect(isThisWeek("2026-10-05")).toBe(true);
+    expect(isThisWeek("2026-10-11")).toBe(true);
+    expect(isThisWeek("2026-10-12")).toBe(false);
   });
 });

@@ -48,9 +48,10 @@ The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
   release-build launch; your choice sticks afterwards)
 - **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
   stored in `settings.json` next to the database
-- **Date input** — the language due dates are typed in: **Automatic**
-  (default, German on a German Windows, English otherwise), **English** or
-  **Deutsch**. Only one language is active at a time
+- **Date input** — the language due dates are typed and shown in:
+  **Automatic** (default, German on a German Windows, English otherwise),
+  **English** or **Deutsch**. Only one language is active at a time, and
+  dates are shown in it too (`Fri 16 Oct` or `Fr., 16. Okt.`)
 - **Check for updates automatically** — on by default; looks for a newer
   release at startup, once a day and when the popup opens. Off means only
   the tray's **Check for updates…** looks
@@ -71,12 +72,21 @@ water plants
     `coming monday`, `early/mid/end of October`, …
   - German: `Fr 15 Uhr`, `Freitag 1500`, `morgen`, `übermorgen`,
     `nächsten`/`kommenden Montag`, `in 2 Monaten`, `Anfang/Mitte/Ende Oktober`,
-    `KW 44` (its Monday), `23.12.2026`, `23.12.` (the next 23 Dec), …
+    `KW 44` (its Monday), `23.12.2026`, `23.12.` (the nearest 23 Dec), …
     Weekday abbreviations (`Mo` … `So`) count only when capitalised and not
     the first word of the line, so `so bald wie möglich` and
     `So schnell es geht` stay text; with a time (`Fr 15 Uhr Zahnarzt`) they
     always count
   - Both: compact dates like `20261223`
+  - Numbers follow the language: `11.10.2026` is 11 October in German and
+    10 November in English (US order)
+  - A date without a time (`friday`, `23.12.`) is just that day: it shows no
+    time and only becomes overdue once the day is over
+  - A date without a year (`10 Oct`, `23.12.`, `KW 44`) is this year's, or
+    next year's once this year's lies more than 30 days back. One that has
+    just passed stays in the past and is flagged (see below) instead of
+    jumping almost a year ahead
+  - `last friday` / `letzten Freitag` is the previous Friday
 - `#word` assigns a category (created on the fly); existing category names
   autocomplete inline — `Tab` or `→` accepts the grayed-out suggestion
 - Everything after a `//` (preceded by a space) becomes the todo's note —
@@ -129,9 +139,10 @@ categories are never changed. Examples live in [`samples/import`](samples/import
   color (names must stay `#tag`-compatible: letters, digits, `_`, `-`)
 - Hover a todo row for pencils to edit its text and due date by mouse
 - Due-date colors: **red** = overdue, **yellow** = due later today or on the
-  next working day before 12:00
+  next working day before 12:00 (a day without a time: today)
 - A due date that is already over as you type it — a full date with the wrong
-  year or day, `today 9am` in the afternoon, `yesterday` — is shown in red
+  year or day, `today 9am` in the afternoon, `yesterday`, `10 Oct` on 11 Oct —
+  is shown in red
   with "in the past" in the quick-add chip and the `D` editor's preview. It is
   only a nudge for a likely typo: saving works as usual. A plain `today` is
   fine
