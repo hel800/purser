@@ -58,6 +58,9 @@ async function renderList() {
 const title = () => document.querySelector(".print-head h1")!.textContent;
 const texts = () => [...document.querySelectorAll(".todo .text")].map((e) => e.textContent);
 const key = (k: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(window, { key: k, ...init });
+const selects = () => argsOf(calls, "plugin:sql|select");
+/** Lets pending promise chains finish; the IPC mock answers synchronously. */
+const settled = () => new Promise((r) => setTimeout(r, 0));
 
 describe("List", () => {
   it("shows the open todos by category with their urgency spelled out", async () => {
@@ -122,9 +125,12 @@ describe("List", () => {
     await waitFor(() => expect(title()).toBe("Purser — Open"));
     await fireEvent.click(screen.getByText("Open")); // already there
 
+    const loads = selects().length;
     key("Tab");
     key("Tab");
-    await new Promise((r) => setTimeout(r, 20));
+    // both loads have to finish before the end state means anything
+    await waitFor(() => expect(selects().length).toBeGreaterThanOrEqual(loads + 2));
+    await settled();
     expect(title()).toBe("Purser — Open");
   });
 
@@ -236,8 +242,13 @@ describe("List", () => {
     await waitFor(() => expect(texts()).toContain("new from popup"));
 
     visible = false;
+    const checks = argsOf(calls, "plugin:window|is_visible").length;
     await addTodos([todo("while hidden")]);
-    await new Promise((r) => setTimeout(r, 20));
+    const reads = selects().length;
+    // the view asked whether it is shown; whatever it does next follows at once
+    await waitFor(() => expect(argsOf(calls, "plugin:window|is_visible")).toHaveLength(checks + 1));
+    await settled();
+    expect(selects()).toHaveLength(reads);
     expect(texts()).not.toContain("while hidden");
 
     await emit("tauri://blur");

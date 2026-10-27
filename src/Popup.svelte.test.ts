@@ -64,6 +64,9 @@ const key = (k: string, init: KeyboardEventInit = {}, target: Element | Window =
   fireEvent.keyDown(target, { key: k, ...init });
 const editor = () => document.querySelector<HTMLInputElement>("input.edit")!;
 const todoNamed = async (text: string) => (await openTodos()).find((t) => t.text === text)!;
+/** The SQL writes so far whose query starts with `prefix`. */
+const writes = (prefix: string) =>
+  argsOf(calls, "plugin:sql|execute").filter((a) => String(a.query).startsWith(prefix));
 
 describe("list", () => {
   it("groups the open todos by category, uncategorized last", async () => {
@@ -104,12 +107,16 @@ describe("list", () => {
 
   it("marks the selected todo done with Enter and restores it in Done", async () => {
     await renderPopup();
+    // fake timers run the slide-out to its end; waitFor can't work under them
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     await key("Enter");
     // a second toggle during the slide-out is ignored
     await key("Enter");
-    await waitFor(() => expect(texts()).not.toContain("pay rent"));
-    expect(texts()).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+    expect(texts()).toEqual(["call bob", "write report", "plan trip"]);
     expect((await doneTodos()).map((t) => t.text)).toEqual(["pay rent"]);
+    expect(writes("UPDATE todos SET done_at")).toHaveLength(1);
 
     await key("Tab");
     await waitFor(() => expect(texts()).toEqual(["pay rent"]));
@@ -122,6 +129,7 @@ describe("list", () => {
     await renderPopup();
     await fireEvent.click(screen.getAllByTitle("Mark as done")[3]);
     await waitFor(() => expect(texts()).not.toContain("plan trip"));
+    expect((await doneTodos()).map((t) => t.text)).toEqual(["plan trip"]);
   });
 
   it("switches views with Tab and the tabs", async () => {
@@ -140,9 +148,11 @@ describe("list", () => {
     await markDone((await todoNamed("plan trip")).id);
     await renderPopup();
     await key("Delete");
-    expect(await openTodos()).toHaveLength(3);
     await key("Tab");
     await waitFor(() => expect(texts()).toEqual(["plan trip"]));
+    // checked after the view switch, so a delete from Open had time to land
+    expect(writes("DELETE")).toEqual([]);
+    expect(await openTodos()).toHaveLength(3);
     await key("Delete");
     await waitFor(() => expect(texts()).toEqual([]));
     expect(await doneTodos()).toEqual([]);
@@ -480,11 +490,17 @@ describe("filters and other keys", () => {
 
   it("points Ctrl+P to the full-size view", async () => {
     await renderPopup();
-    await key("p", { ctrlKey: true });
+    expect(await key("p")).toBe(true); // a plain P is no shortcut
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(await key("p", { ctrlKey: true })).toBe(false);
     expect(screen.getByRole("status").textContent).toMatch(/To print, open the full-size view/);
-    await key("p");
+  });
+
+  it("points Ctrl+P to the full-size view from inside an editor too", async () => {
+    await renderPopup();
     await key("e");
-    await key("p", { ctrlKey: true }, editor()); // also from inside an editor
+    expect(await key("p", { ctrlKey: true }, editor())).toBe(false);
+    expect(screen.getByRole("status").textContent).toMatch(/To print, open the full-size view/);
   });
 
   it("hides with Esc and opens help, import and about", async () => {
