@@ -18,6 +18,14 @@ mod tests;
 const DEFAULT_QUICK_ADD_SHORTCUT: &str = "ctrl+alt+n";
 const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
 
+/// The schema, shared with the frontend tests that run the real SQL. sqlx
+/// stores a checksum of every applied migration and refuses to open a
+/// database whose shipped migration changed, so these files must never be
+/// edited, not even their whitespace (.gitattributes keeps them LF) — add a
+/// new file for every schema change.
+const MIGRATION_1_SQL: &str = include_str!("../migrations/0001_create_schema.sql");
+const MIGRATION_2_SQL: &str = include_str!("../migrations/0002_add_notes.sql");
+
 /// Import files larger than this are rejected — a todo list is a few KB.
 const MAX_IMPORT_BYTES: u64 = 200 * 1024;
 
@@ -983,26 +991,13 @@ pub fn run() {
         Migration {
             version: 1,
             description: "create schema",
-            sql: "CREATE TABLE IF NOT EXISTS categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    color TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                  );
-                  CREATE TABLE IF NOT EXISTS todos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    text TEXT NOT NULL,
-                    due_at TEXT,
-                    created_at TEXT NOT NULL,
-                    done_at TEXT,
-                    category_id INTEGER
-                  );",
+            sql: MIGRATION_1_SQL,
             kind: MigrationKind::Up,
         },
         Migration {
             version: 2,
             description: "add notes to todos",
-            sql: "ALTER TABLE todos ADD COLUMN notes TEXT;",
+            sql: MIGRATION_2_SQL,
             kind: MigrationKind::Up,
         },
     ];

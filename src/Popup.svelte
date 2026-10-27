@@ -4,7 +4,16 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
+  import { formatDue, dueStatus, parseDueDate, parseDueEntry, linkify } from "./lib/parse";
+  import {
+    buildCatMenuItems,
+    catMenuChoice,
+    catMenuKeyAction,
+    categoryGhost,
+    isNewCategoryValid,
+    isRenameValid,
+    moveCatMenuCursor,
+  } from "./lib/catmenu";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
     filterTodos,
@@ -26,9 +35,14 @@
     installUpdate,
     UPDATE_CHECK_INTERVAL_MS,
     UPDATE_RETRY_DELAYS_MS,
-    UPDATE_SHOW_CHECK_MIN_MS,
+    canStartInstall,
+    installPhase,
+    isInstalling,
+    shouldCheckOnShow,
     type UpdateInfo,
+    type UpdatePhase,
   } from "./lib/updater";
+  import { isPrintKey, popupKeyAction } from "./lib/keys";
   import Logo from "./lib/Logo.svelte";
   import Toast from "./lib/Toast.svelte";
   import wordmark from "./assets/purser-wordmark.png";
@@ -52,17 +66,7 @@
   let notesOpenId: number | null = $state(null);
   let notesEdit: { id: number; value: string } | null = $state(null);
 
-  // self-update banner under the header: offered → downloading → installing
-  // (the installer takes over and the app exits); "uptodate" is the brief
-  // answer to a manual check that found nothing; null = hidden
-  type UpdatePhase =
-    | "offer"
-    | "downloading"
-    | "installing"
-    | "error" // install failed; U retries
-    | "uptodate" // manual check: nothing new (brief)
-    | "checkfailed" // manual check: could not ask (brief)
-    | null;
+  // self-update banner under the header (see UpdatePhase)
   let update: UpdateInfo | null = $state(null);
   let updatePhase: UpdatePhase = $state(null);
   let updateProgress: number | null = $state(null);
@@ -99,48 +103,16 @@
   }
 
   // valid = tag-compatible charset and not a duplicate of another category
-  let catNameValid = $derived.by(() => {
-    if (!catEdit) return true;
-    const name = catEdit.name.trim();
-    if (!isValidCategoryName(name)) return false;
-    const lower = name.toLowerCase();
-    return !allCategories.some((c) => c.id !== catEdit!.id && c.name.toLowerCase() === lower);
-  });
-
-  interface CatMenuItem {
-    kind: "cat" | "none";
-    name?: string;
-    color?: string;
-    key: string;
-  }
+  let catNameValid = $derived.by(() => !catEdit || isRenameValid(catEdit.name, catEdit.id, allCategories));
 
   // the pick list below the "new category" input: every category, then a
   // "No category" row to remove the assignment
-  let catMenuItems = $derived.by(() => {
-    const items: CatMenuItem[] = [];
-    for (const c of allCategories) {
-      items.push({ kind: "cat", name: c.name, color: c.color, key: `c${c.id}` });
-    }
-    items.push({ kind: "none", key: "none" });
-    return items;
-  });
+  let catMenuItems = $derived(buildCatMenuItems(allCategories));
 
-  // a new-category name needs text and must round-trip through #tag syntax
-  let catMenuCreateValid = $derived.by(() => {
-    const v = catMenuValue.trim();
-    return v.length > 0 && isValidCategoryName(v);
-  });
+  let catMenuCreateValid = $derived(isNewCategoryValid(catMenuValue));
 
   // grayed-out completion of a unique existing category while typing
-  let catMenuGhost = $derived.by(() => {
-    if (!catMenu || catMenuActive !== 0) return "";
-    const v = catMenuValue;
-    if (!v || !isValidCategoryName(v)) return "";
-    const lower = v.toLowerCase();
-    if (allCategories.some((c) => c.name.toLowerCase() === lower)) return ""; // already complete
-    const match = allCategories.find((c) => c.name.toLowerCase().startsWith(lower));
-    return match ? match.name.slice(v.length) : "";
-  });
+  let catMenuGhost = $derived(catMenu && catMenuActive === 0 ? categoryGhost(catMenuValue, allCategories) : "");
 
   // live preview of the due-date editor; `past` warns about a date that is
   // already over as it is typed (likely a typo) — Enter still saves it
@@ -186,7 +158,7 @@
    * or why it could not ask, for a few seconds.
    */
   async function lookForUpdate(manual = false) {
-    if (updatePhase === "downloading" || updatePhase === "installing") return;
+    if (isInstalling(updatePhase)) return;
     // automatic checks respect the setting; the tray's manual check always runs
     if (!manual && !settings.autoUpdateCheck) return;
     lastUpdateCheck = Date.now();
@@ -218,7 +190,7 @@
     try {
       await installUpdate((percent) => {
         updateProgress = percent;
-        if (percent === 100) updatePhase = "installing";
+        updatePhase = installPhase(percent);
       });
     } catch (e) {
       updatePhase = "error";
@@ -255,7 +227,7 @@
       // manual check arriving right behind this event (tray "Check for
       // updates…" on a hidden popup) counts as that check instead of a second one
       setTimeout(() => {
-        if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
+        if (shouldCheckOnShow(updatePhase, lastUpdateCheck, Date.now())) lookForUpdate();
       }, 1000);
       const state = e.payload;
       const nextView = state?.view ?? "open";
@@ -486,7 +458,7 @@
   }
 
   function catMenuMove(dir: 1 | -1) {
-    catMenuActive = Math.min(Math.max(catMenuActive + dir, 0), catMenuItems.length);
+    catMenuActive = moveCatMenuCursor(catMenuActive, dir, catMenuItems.length);
     // keyboard navigation moves focus so typing lands in the list (j/k nav)
     // instead of the "new category" input
     if (catMenuActive === 0) catMenuInput?.focus();
@@ -501,65 +473,41 @@
 
   async function catMenuChoose(activeIndex: number) {
     if (!catMenu) return;
-    // row 0 is the "new category" input — Enter creates it (empty names ignored)
     if (activeIndex === 0) {
       catMenuActive = 0;
       catMenuInput?.focus();
-      if (!catMenuCreateValid) return;
-      await updateTodoCategory(catMenu.id, catMenuValue.trim());
-      closeCatMenu();
-      await reload();
-      return;
     }
-    const item = catMenuItems[activeIndex - 1];
-    if (!item) return;
-    await updateTodoCategory(catMenu.id, item.kind === "none" ? null : (item.name ?? null));
+    // row 0 is the "new category" input — Enter creates it (empty names ignored)
+    const category = catMenuChoice(activeIndex, catMenuItems, catMenuValue);
+    if (category === undefined) return;
+    await updateTodoCategory(catMenu.id, category);
     closeCatMenu();
     await reload();
   }
 
   async function onCatMenuKeydown(e: KeyboardEvent) {
     if (!catMenu) return;
-    switch (e.key) {
-      case "Escape":
+    const action = catMenuKeyAction(e.key, {
+      active: catMenuActive,
+      // arrow keys and j/k move focus to the row (see catMenuMove)
+      typing: document.activeElement === catMenuInput && catMenuCreateValid,
+      ghost: catMenuGhost,
+    });
+    if (!action) return;
+    // Esc only closes the menu; every other menu key is the menu's alone
+    if (action.type !== "close") e.preventDefault();
+    switch (action.type) {
+      case "close":
         closeCatMenu();
         break;
-      case "ArrowDown":
-        e.preventDefault();
-        catMenuMove(1);
+      case "move":
+        catMenuMove(action.dir);
         break;
-      case "ArrowUp":
-        e.preventDefault();
-        catMenuMove(-1);
+      case "choose":
+        await catMenuChoose(action.row);
         break;
-      case "j":
-      case "k":
-        // only navigate while the list is active — inside the input these
-        // must type normally
-        if (catMenuActive !== 0) {
-          e.preventDefault();
-          catMenuMove(e.key === "j" ? 1 : -1);
-        }
-        break;
-      case "Enter": {
-        e.preventDefault();
-        // a typed valid name wins over a row the mouse merely hovers, but not
-        // over one the user moved to on purpose: arrow keys and j/k give the
-        // row focus (see catMenuMove), hovering leaves the input focused
-        const typing = document.activeElement === catMenuInput && catMenuCreateValid;
-        await catMenuChoose(typing ? 0 : catMenuActive);
-        break;
-      }
-      case "Tab":
-        // accept the grayed-out completion instead of tabbing away
-        e.preventDefault();
+      case "acceptGhost":
         acceptCatMenuGhost();
-        break;
-      case "ArrowRight":
-        if (catMenuActive === 0 && catMenuGhost) {
-          e.preventDefault();
-          acceptCatMenuGhost();
-        }
         break;
     }
   }
@@ -575,7 +523,7 @@
   // full-size view instead. Capture phase, because the edit inputs stop
   // their keys from bubbling to the window.
   function blockPrint(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    if (isPrintKey(e)) {
       e.preventDefault();
       e.stopPropagation();
       printToast?.flash();
@@ -599,111 +547,64 @@
       await onCatMenuKeydown(e);
       return;
     }
-    switch (e.key) {
-      case "Escape":
+    const { action, preventDefault } = popupKeyAction(e.key, {
+      view,
+      hasSelection: flat[selected] !== undefined,
+      canInstallUpdate: canStartInstall(updatePhase),
+    });
+    if (preventDefault) e.preventDefault();
+    const t = flat[selected];
+    switch (action) {
+      case "hide":
         await win.hide();
         break;
-      case "ArrowDown":
-      case "j":
-        e.preventDefault();
+      case "down":
         if (flat.length) selected = Math.min(selected + 1, flat.length - 1);
         break;
-      case "ArrowUp":
-      case "k":
-        e.preventDefault();
+      case "up":
         if (flat.length) selected = Math.max(selected - 1, 0);
         break;
-      case "Enter":
-        // a previously clicked button (tab, pen, wordmark…) may still hold
-        // focus — block its default Enter activation, only toggle the todo
-        e.preventDefault();
+      case "toggleDone":
         await toggleSelected();
         break;
-      case "d": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startDueEdit(selected, t);
-        }
+      case "editDue":
+        if (t) startDueEdit(selected, t);
         break;
-      }
-      case "e":
-      case "F2": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startTextEdit(selected, t);
-        }
+      case "editText":
+        if (t) startTextEdit(selected, t);
         break;
-      }
-      case "c": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          openCatMenu(selected, t);
-        }
+      case "editCategory":
+        if (t) openCatMenu(selected, t);
         break;
-      }
-      case "t": {
-        if (view === "open") {
-          e.preventDefault();
-          cycleCat();
-        }
+      case "editNotes":
+        if (t) startNotesEdit(selected, t);
         break;
-      }
-      case "f": {
-        if (view === "open") {
-          e.preventDefault();
-          cycleDue();
-        }
+      case "cycleCategory":
+        cycleCat();
         break;
-      }
-      case " ": {
-        // also blocks a focused button from being space-activated
-        e.preventDefault();
-        const t = flat[selected];
+      case "cycleDue":
+        cycleDue();
+        break;
+      case "toggleNotes":
         if (t?.notes) notesOpenId = notesOpenId === t.id ? null : t.id;
         break;
-      }
-      case "n": {
-        const t = flat[selected];
-        if (t && view === "open") {
-          e.preventDefault();
-          startNotesEdit(selected, t);
-        }
-        break;
-      }
-      case "Delete": {
-        const t = flat[selected];
-        if (t && view === "done") {
+      case "delete":
+        if (t) {
           await deleteTodo(t.id);
           await reload();
         }
         break;
-      }
-      case "Tab":
-        e.preventDefault();
+      case "switchView":
         await switchView(view === "open" ? "done" : "open");
         break;
-      case "l":
+      case "fullView":
         // swap to the full-size view, keeping view and filters
-        e.preventDefault();
         invoke("open_list", { state: { view, catFilter, dueFilter } satisfies ViewState });
         break;
-      case "u":
-        // install (or retry) the update the banner offers; Esc stays the
-        // window's, so the banner survives hiding the popup
-        if (updatePhase === "offer" || updatePhase === "error") {
-          e.preventDefault();
-          await startUpdate();
-        }
+      case "installUpdate":
+        await startUpdate();
         break;
-      case "?":
-        e.preventDefault();
-        openHelp();
-        break;
-      case "F1":
-        e.preventDefault();
+      case "help":
         openHelp();
         break;
     }
