@@ -1,8 +1,24 @@
 <script lang="ts">
-  let { size = 20 }: { size?: number } = $props();
+  import { invoke } from "@tauri-apps/api/core";
+
+  /** `menu`: a left or right click opens the tray menu (see `show_app_menu`) */
+  let { size = 20, menu = false }: { size?: number; menu?: boolean } = $props();
+
+  function openMenu(e: MouseEvent) {
+    e.preventDefault();
+    invoke("show_app_menu");
+  }
 </script>
 
-<svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 64 64"
+  aria-hidden="true"
+  class:menu
+  onclick={menu ? openMenu : undefined}
+  oncontextmenu={menu ? openMenu : undefined}
+>
   <rect
     x="6"
     y="6"
@@ -29,5 +45,8 @@
   svg {
     display: block;
     flex-shrink: 0;
+  }
+  svg.menu {
+    cursor: pointer;
   }
 </style>
