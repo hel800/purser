@@ -227,7 +227,9 @@ workflow (see below).
 `samples/import`. Component tests are named `*.svelte.test.ts` and run in
 jsdom with Testing Library; everything else runs in plain Node. No test needs
 the Tauri backend: `src/test/ipc.ts` answers `invoke` calls and delivers
-events in memory, and `src/test/sqlite.ts` runs the SQL plugin's queries
+events in memory. It also fails a test whose code calls a command or passes
+arguments that `src-tauri/src/lib.rs` doesn't declare, so a rename on one
+side only is caught. `src/test/sqlite.ts` runs the SQL plugin's queries
 against Node's built-in SQLite with the schema from `src-tauri/migrations/`.
 `npm run coverage` fails when lines, statements, functions or branches drop
 below 90%; CI runs it and shows the totals in the job summary. Keep the pure
