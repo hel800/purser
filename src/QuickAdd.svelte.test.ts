@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { emit, listen } from "@tauri-apps/api/event";
 import { argsOf, installIpc, type IpcCall } from "./test/ipc";
 import { createDatabase, sqlHandlers } from "./test/sqlite";
 import { freezeAt } from "./test/clock";
 import { TEST_SETTINGS } from "./test/settings";
+import { triggerResize } from "./test/resize";
 import { addTodo, openTodos } from "./lib/db";
 import QuickAdd from "./QuickAdd.svelte";
 
@@ -93,14 +94,13 @@ describe("QuickAdd", () => {
   });
 
   it("follows the caret when it moves without typing", async () => {
-    await type("#wo later");
-    expect(ghost()).toBe("");
+    await type("#wo ");
+    expect(ghost()).toBe(""); // the caret is past the tag
     input.setSelectionRange(3, 3);
     document.dispatchEvent(new Event("selectionchange"));
-    // the caret is inside the tag, but text follows it: no inline ghost
-    await waitFor(() => expect(ghost()).toBe(""));
+    await waitFor(() => expect(ghost()).toBe("rk"));
     await key("Tab");
-    expect(input.value).toBe("#wo later");
+    expect(input.value).toBe("#Work ");
   });
 
   it("keeps Tab in the window without a completion", async () => {
@@ -133,7 +133,23 @@ describe("QuickAdd", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it("fits the window to its content", async () => {
-    await waitFor(() => expect(argsOf(calls, "plugin:window|set_size")).not.toEqual([]));
+  it("grows the window with a wrapping input and shrinks it back", async () => {
+    // the size object takes its IPC shape only when serialized
+    const heights = () =>
+      argsOf(calls, "plugin:window|set_size").map((a) => JSON.parse(JSON.stringify(a.value)).Logical.height);
+    await waitFor(() => expect(heights()).toEqual([108]));
+
+    // jsdom has no layout: set the heights a second input line and a
+    // wrapped hints row would have
+    const inputHeight = vi.spyOn(input, "offsetHeight", "get").mockReturnValue(52);
+    const hints = document.querySelector<HTMLElement>(".hints")!;
+    const hintsHeight = vi.spyOn(hints, "offsetHeight", "get").mockReturnValue(44);
+    triggerResize();
+    await waitFor(() => expect(heights()).toEqual([108, 108 + 26 + 22]));
+
+    inputHeight.mockReturnValue(26);
+    hintsHeight.mockReturnValue(22);
+    triggerResize();
+    await waitFor(() => expect(heights()).toEqual([108, 156, 108]));
   });
 });
