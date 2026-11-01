@@ -863,7 +863,8 @@ fn check_for_updates(app: &AppHandle) {
 }
 
 /// About behaves like the keyboard-shortcut sheet (see `show_help`): the
-/// window that opened it stays visible underneath and regains focus on close.
+/// window that opened it stays visible underneath and regains focus when
+/// About is closed (see `close_about_inner` and `dismiss_about`).
 fn show_about(app: &AppHandle, owner: Option<String>) {
     if let Some(win) = app.get_webview_window("about") {
         // set before taking focus, so the owner's focus-loss handler keeps it
@@ -878,16 +879,47 @@ fn about_is_open(app: &AppHandle) -> bool {
     app.state::<AboutOwner>().0.lock().unwrap().is_some()
 }
 
-fn close_about_inner(app: &AppHandle) {
+/// Hides About and releases its owner, returning the owner's window.
+fn hide_about(app: &AppHandle) -> Option<WebviewWindow> {
     let owner = app.state::<AboutOwner>().0.lock().unwrap().take();
     if let Some(win) = app.get_webview_window("about") {
         let _ = win.hide();
     }
-    if let Some(owner_win) = owner.and_then(|label| app.get_webview_window(&label)) {
+    owner.and_then(|label| app.get_webview_window(&label))
+}
+
+/// About closed with ✕, Esc or Alt+F4: the owner gets its focus back.
+fn close_about_inner(app: &AppHandle) {
+    if let Some(owner_win) = hide_about(app) {
         if owner_win.is_visible().unwrap_or(false) {
             let _ = owner_win.set_focus();
         }
     }
+}
+
+/// How long `dismiss_about` waits for the owner to receive the focus.
+const OWNER_FOCUS_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// About lost focus, e.g. to a click into another app. Taking the focus back
+/// for the owner would steal it from that app (or, if Windows refuses, leave
+/// the owner visible but unfocused, so it would never hide). Instead the
+/// owner hides too, as it would have on its own focus loss — unless the
+/// click went to the owner itself. Windows hands that focus over only after
+/// About lost it, hence the short wait before checking.
+fn dismiss_about(app: &AppHandle) {
+    let Some(owner_win) = hide_about(app) else {
+        return;
+    };
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(OWNER_FOCUS_DELAY);
+        let still_needed = owner_win.is_focused().unwrap_or(false)
+            || help_is_open(&handle)
+            || about_is_open(&handle);
+        if !still_needed {
+            let _ = owner_win.hide();
+        }
+    });
 }
 
 /// Human-friendly form of a stored combo ("ctrl+alt+n" → "Ctrl+Alt+N") for
@@ -1422,7 +1454,7 @@ pub fn run() {
                     // the keyboard-shortcut sheet opened from About stays on
                     // top of it; any other focus loss closes About
                     if !help_is_open(app) {
-                        close_about_inner(app);
+                        dismiss_about(app);
                     }
                 } else if !help_is_open(app) && !about_is_open(app) {
                     let _ = window.hide();
