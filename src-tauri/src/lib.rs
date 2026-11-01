@@ -929,9 +929,9 @@ fn tray_shortcut_labels(settings: &Settings) -> (String, String) {
 /// the autostart state.
 fn refresh_tray_items(app: &AppHandle) {
     let settings = app.state::<Mutex<Settings>>().lock().unwrap().clone();
-    let state = app.state::<TrayItems>();
-    let items = state.0.lock().unwrap();
-    let Some(items) = items.as_ref() else {
+    // a clone, so the lock is released before the setters below: they wait
+    // for the main thread, which could be waiting for this lock
+    let Some(items) = app.state::<TrayItems>().0.lock().unwrap().clone() else {
         return;
     };
     let (add_text, list_text) = tray_shortcut_labels(&settings);
