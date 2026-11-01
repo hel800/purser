@@ -39,6 +39,10 @@ check. Tray menu → **Check for updates…** looks right away.
 | `Esc` (or clicking elsewhere) | Dismiss popup |
 
 Left-clicking the tray icon also opens the list; right-click shows a menu.
+The same menu opens from a left or right click on the Purser logo in the
+popup, quick-add and full-size view, without the entry for the window you're
+in. The keyboard-shortcuts sheet and About, opened from a window, stay on top
+of it; closing them with `Esc` or ✕ returns to that window.
 The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
 (`?` or `F1`); the sheet records the next combination you press.
 
