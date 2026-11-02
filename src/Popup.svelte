@@ -723,7 +723,7 @@
 
 <main>
   <header>
-    <Logo size={20} />
+    <Logo size={20} menu />
     <button class="tab" class:active={view === "open"} onclick={() => switchView("open")}>
       Open
     </button>
