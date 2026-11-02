@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
+  import { dateLanguage, formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
     filterTodos,
@@ -900,7 +900,7 @@
               onkeydown={onEditKeydown}
               onfocusout={cancelEdit}
               use:focusInput
-              placeholder="friday 5pm · empty = none"
+              placeholder={dateLanguage() === "de" ? "Fr 17 Uhr · empty = none" : "friday 5pm · empty = none"}
               spellcheck="false"
             />
             <span class="preview" class:past={editPreview.past}>{editPreview.text}</span>

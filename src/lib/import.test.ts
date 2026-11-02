@@ -34,7 +34,7 @@ describe("parseImportLine", () => {
     expect(parseImportLine("• Review TICKET-839 Monday #Project1 //https://example.org/TICKET-839")).toEqual({
       text: "Review TICKET-839",
       category: "Project1",
-      dueAt: local(2026, 10, 12, 12),
+      dueAt: "2026-10-12",
       notes: "https://example.org/TICKET-839",
     });
     expect(parseImportLine("call bob //https://example.org/x #work")).toEqual({
@@ -84,7 +84,7 @@ describe("parseImport with the sample files", () => {
     expect(items[0]).toEqual({
       text: "Book flights",
       category: "travel",
-      dueAt: local(2026, 10, 16, 12),
+      dueAt: "2026-10-16",
       notes: "Window seat, if possible",
     });
     expect(items[1]).toMatchObject({
@@ -98,7 +98,7 @@ describe("parseImport with the sample files", () => {
       notes: "Sections:\n- summary\n- numbers",
     });
     expect(items[3]).toMatchObject({ category: "team", notes: "https://example.org/team-event" });
-    expect(items[3].dueAt).toMatch(/^2026-11-01T/); // "in 3 weeks"
+    expect(items[3].dueAt).toBe("2026-11-01"); // "in 3 weeks"
     expect(items[4]).toMatchObject({ text: "Water plants", category: "home" });
   });
 
@@ -112,7 +112,7 @@ describe("parseImport with the sample files", () => {
       "DEMO-2328",
       "DEMO-2339",
     ]);
-    expect(items[1].dueAt).toBe(local(2026, 12, 17));
+    expect(items[1].dueAt).toBe("2026-12-17"); // "2026-Dec-17 00:00" is a day
     expect(items[4].text).toBe('DEMO-2328 integrate "update of clinical evaluation" into SDLC');
     expect(items[5]).toMatchObject({
       text: "DEMO-2339 Effectiveness check for translation training, part #2",
@@ -124,7 +124,7 @@ describe("parseImport with the sample files", () => {
   it("takes the Jira description as note and reads the dd/Mon/yy format", () => {
     const { items } = parseImport(sample("jira-export-description.csv"), true);
     expect(items[0]).toMatchObject({
-      dueAt: local(2026, 10, 12),
+      dueAt: "2026-10-12",
       notes: "Add the new VPN steps.\nSee https://example.org/wiki/onboarding",
     });
     expect(items[2]).toMatchObject({ text: "DEMO-104 Prepare sprint review", dueAt: local(2026, 10, 2, 15) });
