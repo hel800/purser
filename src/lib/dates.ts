@@ -250,12 +250,23 @@ function comingWeekdayParser(comingWords: string, weekdays: Record<string, numbe
  * "last Friday" / "letzten Freitag": the most recent such weekday before
  * today, which the past-date warning then flags. chrono rolls "last Friday"
  * forward to the coming one (`forwardDate`) and reads only the "Freitag" of
- * "vergangenen Freitag".
+ * "vergangenen Freitag". Not when `ofMonth` follows: "last Friday of the
+ * month" / "letzter Freitag im Oktober" is a day within that month instead.
+ * Only a month counts there, so "last Friday in the office" stays the
+ * previous Friday.
  */
-function lastWeekdayParser(lastWords: string, weekdays: Record<string, number>): Parser {
+function lastWeekdayParser(
+  lastWords: string,
+  weekdays: Record<string, number>,
+  ofMonth: string
+): Parser {
+  const notOfMonth = `(?!\\s+(?:${ofMonth})${NOT_BEFORE_WORD})`;
   return {
     pattern: () =>
-      new RegExp(`(?:${lastWords})\\s+(${alternation(weekdays)})${NOT_BEFORE_WORD}`, "iu"),
+      new RegExp(
+        `(?:${lastWords})\\s+(${alternation(weekdays)})${NOT_BEFORE_WORD}${notOfMonth}`,
+        "iu"
+      ),
     extract: (context, match) => {
       const today = startOfDay(context.refDate);
       const weekday = weekdays[match[1].toLowerCase()];
@@ -393,7 +404,11 @@ function buildEnglish(): chrono.Chrono {
   // first, so it wins over chrono's own reading of the same words
   parser.parsers.unshift(
     atWordStart(
-      lastWeekdayParser("last|previous", { ...ENGLISH_WEEKDAYS, ...ENGLISH_WEEKDAY_ABBREVIATIONS })
+      lastWeekdayParser(
+        "last|previous",
+        { ...ENGLISH_WEEKDAYS, ...ENGLISH_WEEKDAY_ABBREVIATIONS },
+        `(?:of|in)\\s+(?:(?:the|this|next)\\s+month|${alternation(ENGLISH_MONTHS)})`
+      )
     )
   );
   letCompactIsoThrough(parser);
@@ -417,7 +432,8 @@ function buildGerman(): chrono.Chrono {
     atWordStart(
       lastWeekdayParser(
         "letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?",
-        { ...GERMAN_WEEKDAYS, ...GERMAN_WEEKDAY_ABBREVIATIONS }
+        { ...GERMAN_WEEKDAYS, ...GERMAN_WEEKDAY_ABBREVIATIONS },
+        `(?:im|des|diese[ns]|nächste[ns])\\s+(?:Monats?|${alternation(GERMAN_MONTHS)})`
       )
     )
   );

@@ -221,4 +221,25 @@ describe("past weekdays (REF is a Sunday)", () => {
     expect(found(input, language)).toBe(expected);
     expect(matchedText(input, language)).toBe(input);
   });
+
+  // chrono reads these as the coming Friday, as before #43
+  it.each([
+    ["last friday of the month", "en"],
+    ["last friday in October", "en"],
+    ["letzter Freitag im Monat", "de"],
+    ["letzten Freitag des Monats", "de"],
+    ["letzten Freitag im Oktober", "de"],
+  ] as const)("leaves %s (%s) to chrono", (input, language) => {
+    expect(found(input, language)).toBe("2026-10-02 12:00");
+  });
+
+  it.each([
+    ["met him last friday in the office", "en", "last friday"],
+    ["recap of last friday in Slack", "en", "last friday"],
+    ["Meeting vom letzten Freitag im Büro", "de", "letzten Freitag"],
+    ["letzten Freitag in Berlin", "de", "letzten Freitag"],
+  ] as const)("keeps %s (%s) on the previous Friday", (input, language, text) => {
+    expect(found(input, language)).toBe("2026-09-25 12:00");
+    expect(matchedText(input, language)).toBe(text);
+  });
 });
