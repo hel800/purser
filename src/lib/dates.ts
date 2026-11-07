@@ -200,8 +200,8 @@ type MonthPart = "start" | "middle" | "end";
 
 /**
  * "Anfang/Mitte/Ende Oktober" or "early/mid/end of October", optionally with
- * a year: the 1st, 15th or last day of the month. Without a year, the next
- * such day that isn't in the past.
+ * a year: the 1st, 15th or last day of the month. Without a year, the
+ * nearest such day (`inNearestYear`).
  */
 function monthPartParser(parts: Record<string, MonthPart>, months: Record<string, number>): Parser {
   // "end of" must be tried before "end", and may contain any whitespace
@@ -313,7 +313,7 @@ function mondayOfIsoWeek(year: number, week: number): Date | null {
 
 /**
  * German calendar week "KW 44" / "KW44", optionally with a year: its Monday.
- * Without a year, this year's week, or next year's once it has passed.
+ * Without a year, the nearest such week (`inNearestYear`).
  */
 const calendarWeekParser: Parser = {
   pattern: () => new RegExp(`KW\\s*(\\d{1,2})(?:\\s+(\\d{4}))?${NOT_BEFORE_WORD}`, "iu"),
