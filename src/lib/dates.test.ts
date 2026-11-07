@@ -213,6 +213,10 @@ describe("past weekdays (REF is a Sunday)", () => {
     ["letzten Freitag", "de", "2026-09-25 12:00"],
     ["vergangenen Freitag", "de", "2026-09-25 12:00"],
     ["vorigen Sonntag", "de", "2026-09-20 12:00"],
+    ["last fri", "en", "2026-09-25 12:00"],
+    ["last thurs", "en", "2026-09-24 12:00"],
+    ["vergangenen Fr", "de", "2026-09-25 12:00"],
+    ["letzten Mo", "de", "2026-09-21 12:00"],
   ] as const)("%s (%s) -> %s", (input, language, expected) => {
     expect(found(input, language)).toBe(expected);
     expect(matchedText(input, language)).toBe(input);

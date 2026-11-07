@@ -95,6 +95,15 @@ const GERMAN_WEEKDAYS: Record<string, number> = {
   samstag: 6, sonnabend: 6,
 };
 
+// only after "last"/"letzten", see `lastWeekdayParser`
+const ENGLISH_WEEKDAY_ABBREVIATIONS: Record<string, number> = {
+  sun: 0, mon: 1, tue: 2, tues: 2, wed: 3, thu: 4, thur: 4, thurs: 4, fri: 5, sat: 6,
+};
+
+const GERMAN_WEEKDAY_ABBREVIATIONS: Record<string, number> = {
+  so: 0, mo: 1, di: 2, mi: 3, do: 4, fr: 5, sa: 6,
+};
+
 /** Alternation of the keys, longest first so "sept" wins over "sep". */
 function alternation(words: Record<string, unknown>): string {
   return Object.keys(words)
@@ -382,7 +391,11 @@ function buildEnglish(): chrono.Chrono {
     ].map(atWordStart)
   );
   // first, so it wins over chrono's own reading of the same words
-  parser.parsers.unshift(atWordStart(lastWeekdayParser("last|previous", ENGLISH_WEEKDAYS)));
+  parser.parsers.unshift(
+    atWordStart(
+      lastWeekdayParser("last|previous", { ...ENGLISH_WEEKDAYS, ...ENGLISH_WEEKDAY_ABBREVIATIONS })
+    )
+  );
   letCompactIsoThrough(parser);
   parser.refiners.push(nearestYearRefiner);
   return parser;
@@ -401,7 +414,12 @@ function buildGerman(): chrono.Chrono {
   );
   // first, so it wins over chrono's own reading of the same words
   parser.parsers.unshift(
-    atWordStart(lastWeekdayParser("letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?", GERMAN_WEEKDAYS))
+    atWordStart(
+      lastWeekdayParser(
+        "letzte[nmrs]?|vergangene[nmrs]?|vorige[nmrs]?",
+        { ...GERMAN_WEEKDAYS, ...GERMAN_WEEKDAY_ABBREVIATIONS }
+      )
+    )
   );
   letCompactIsoThrough(parser);
   parser.refiners.push(
