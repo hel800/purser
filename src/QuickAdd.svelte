@@ -202,7 +202,7 @@
       bind:value
       oninput={onInput}
       rows="1"
-      placeholder={dateLanguage() === "de" ? "pay rent Fr 17 Uhr #finance" : "pay rent friday 5pm #finance"}
+      placeholder={dateLanguage() === "de" ? "Miete zahlen Fr 17 Uhr #finanzen" : "pay rent friday 5pm #finance"}
       spellcheck="false"
     ></textarea>
     <span class="ghost" aria-hidden="true">
