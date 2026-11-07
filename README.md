@@ -50,7 +50,7 @@ The two global shortcuts can be reassigned from the keyboard-shortcuts sheet
 
 - **Start with Windows** — toggles autostart (on by default after the first
   release-build launch; your choice sticks afterwards)
-- **24-hour clock** — switches due-date display between 24 h and 12 h (AM/PM);
+- **24-hour clock** — switches due-date display between 24 h and 12 h (`5:00 p.m.`);
   stored in `settings.json` next to the database
 - **Date input** — the language due dates are typed and shown in:
   **Automatic** (default, German on a German Windows, English otherwise),
@@ -74,6 +74,7 @@ water plants
   in the **Date input** language (tray → Settings):
   - English: `friday 5pm`, `tomorrow`, `in 2 weeks`, `Aug 20`,
     `coming monday`, `early/mid/end of October`, …
+    Times need am/pm in any spelling: `5pm`, `5 PM`, `5:30 p.m.`, `5A.M.`
   - German: `Fr 15 Uhr`, `Freitag 1500`, `morgen`, `übermorgen`,
     `nächsten`/`kommenden Montag`, `in 2 Monaten`, `Anfang/Mitte/Ende Oktober`,
     `KW 44` (its Monday), `23.12.2026`, `23.12.` (the nearest 23 Dec), …

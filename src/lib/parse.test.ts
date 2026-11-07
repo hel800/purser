@@ -170,7 +170,18 @@ describe("formatDue", () => {
   it("follows the hour24 setting", () => {
     expect(formatDue(local(2026, 10, 16, 17))).toMatch(/17:00$/);
     settings.hour24 = false;
-    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\s?pm$/i);
+    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\sp\.m\.$/);
+    expect(formatDue(local(2026, 10, 16, 9, 30))).toMatch(/9:30\sa\.m\.$/);
+    settings.dateLanguage = "de";
+    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\sp\.m\.$/);
+  });
+
+  it.each(["5am", "5AM", "5a.m.", "5A.M.", "5 a.m."])("reads friday %s", (time) => {
+    expect(parseTodo(`x friday ${time}`)).toMatchObject({ text: "x", dueAt: local(2026, 10, 16, 5) });
+  });
+
+  it.each(["5pm", "5PM", "5p.m.", "5P.M.", "5 p.m."])("reads friday %s", (time) => {
+    expect(parseTodo(`x friday ${time}`)).toMatchObject({ text: "x", dueAt: local(2026, 10, 16, 17) });
   });
 });
 

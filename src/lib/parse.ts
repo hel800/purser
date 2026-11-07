@@ -155,13 +155,20 @@ export function formatDue(due: string | null): string {
   const hasTime = !isDayOnly(due) && (d.getHours() !== 0 || d.getMinutes() !== 0);
   const time = hasTime
     ? " " +
-      d.toLocaleTimeString(dueLocale(), {
-        hour: settings.hour24 ? "2-digit" : "numeric",
-        minute: "2-digit",
-        hour12: !settings.hour24,
-      })
+      withDottedMeridiem(
+        d.toLocaleTimeString(dueLocale(), {
+          hour: settings.hour24 ? "2-digit" : "numeric",
+          minute: "2-digit",
+          hour12: !settings.hour24,
+        })
+      )
     : "";
   return date + time;
+}
+
+/** "5:00 pm" (en-GB) or "5:00 PM" (de-DE) as "5:00 p.m." in both languages. */
+function withDottedMeridiem(time: string): string {
+  return time.replace(/([ap])m$/i, (_, letter: string) => `${letter.toLowerCase()}.m.`);
 }
 
 /** Split note text into plain segments and clickable https?:// links. */
