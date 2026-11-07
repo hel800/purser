@@ -256,3 +256,30 @@ describe("isToday / isThisWeek (Mon 5 Oct – Sun 11 Oct)", () => {
     expect(isThisWeek("2026-10-12")).toBe(false);
   });
 });
+
+// The table of #43, entered on Sun 11 Oct 2026 13:02 (NOW), in both date
+// languages: what is stored, whether the preview warns, and how it is shown.
+describe("issue #43 table, both languages", () => {
+  it.each([
+    ["sdfj 10 Oct", "en", "2026-10-10", true, /^Sat,? 10 Oct$/],
+    ["x 11.10.2026", "en", "2026-11-10", false, /^Tue,? 10 Nov$/],
+    ["x 1.2.2026", "en", "2026-01-02", true, /^Fri,? 2 Jan$/],
+    ["x friday", "en", "2026-10-16", false, /^Fri,? 16 Oct$/],
+    ["x 15 dec", "en", "2026-12-15", false, /^Tue,? 15 Dec$/],
+    ["x 23.12.2026", "en", "2026-12-23", false, /^Wed,? 23 Dec$/],
+    ["x last friday", "en", "2026-10-09", true, /^Fri,? 9 Oct$/],
+    ["sdfj 10. Oktober", "de", "2026-10-10", true, /^Sa\., 10\. Okt\.$/],
+    ["x 11.10.2026", "de", "2026-10-11", false, /^So\., 11\. Okt\.$/],
+    ["x 1.2.2026", "de", "2026-02-01", true, /^So\., 1\. Feb\.$/],
+    ["x Freitag", "de", "2026-10-16", false, /^Fr\., 16\. Okt\.$/],
+    ["x 15. Dezember", "de", "2026-12-15", false, /^Di\., 15\. Dez\.$/],
+    ["x 23.12.2026", "de", "2026-12-23", false, /^Mi\., 23\. Dez\.$/],
+    ["x letzten Freitag", "de", "2026-10-09", true, /^Fr\., 9\. Okt\.$/],
+  ] as const)("%s (%s) -> %s", (input, language, dueAt, duePast, shown) => {
+    settings.dateLanguage = language;
+    const parsed = parseTodo(input);
+    expect(parsed).toMatchObject({ dueAt, duePast });
+    expect(parsed.text).toBe(input.split(" ")[0]);
+    expect(formatDue(parsed.dueAt)).toMatch(shown);
+  });
+});
