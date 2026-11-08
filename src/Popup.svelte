@@ -20,6 +20,7 @@
   import { slide } from "svelte/transition";
   import { initSettings, settings } from "./lib/settings.svelte";
   import { runImport, type ImportRequest } from "./lib/import";
+  import { startSourceRefresh } from "./lib/sources";
   import { getVersion } from "@tauri-apps/api/app";
   import {
     checkForUpdate,
@@ -68,6 +69,10 @@
   let updateProgress: number | null = $state(null);
   let updateError = $state("");
   let currentVersion = $state("");
+
+  // the latest failure per data source, shown until its next successful
+  // refresh or until dismissed; the source's last good items stay listed
+  let sourceErrors: Record<string, string> = $state({});
 
   // filter bar (Open view only): category (null = all, -1 = uncategorized)
   // and a due-date stage, both cycled by keyboard or click
@@ -272,7 +277,19 @@
     // imports run here (this webview is always loaded); the backend shows
     // the result and then opens the list, which refreshes it
     const unlistenImport = listen<ImportRequest>("purser://import", (e) => runImport(e.payload));
+    // sources run here too, for the same reason; a hidden popup reloads on show anyway
+    const stopSources = startSourceRefresh({
+      onSynced: async (id) => {
+        delete sourceErrors[id];
+        // keep an edit in progress intact; the next show reloads anyway
+        if (!editing && !notesEdit && !catMenu && !catEdit && (await win.isVisible())) await reload();
+      },
+      onError: (id, message) => {
+        sourceErrors[id] = message;
+      },
+    });
     return () => {
+      stopSources();
       clearInterval(updateTimer);
       clearTimeout(upToDateTimer);
       updateRetries.forEach(clearTimeout);
@@ -793,6 +810,15 @@
       {/if}
     </div>
   {/if}
+
+  {#each Object.entries(sourceErrors) as [id, message] (id)}
+    <div class="update error" role="status">
+      <span class="update-text" title={message}>Data source {id}: {message}</span>
+      <span class="update-keys">
+        <button class="update-x" onclick={() => delete sourceErrors[id]} title="Dismiss">✕</button>
+      </span>
+    </div>
+  {/each}
 
   {#if view === "open"}
     <FilterBar {todos} bind:catFilter bind:dueFilter bind:menu={filterMenu} onchange={() => (selected = 0)} />
