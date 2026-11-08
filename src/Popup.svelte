@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, isReadOnly, type Todo, type Category } from "./lib/db";
   import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
@@ -299,6 +299,10 @@
   async function toggleSelected() {
     const t = flat[selected];
     if (!t || leaving) return;
+    if (isReadOnly(t)) {
+      openExternal(t);
+      return;
+    }
     leaving = { id: t.id, dir: view === "open" ? "right" : "left" };
     await new Promise((r) => setTimeout(r, 460));
     if (view === "open") await markDone(t.id);
@@ -307,6 +311,24 @@
     // otherwise it briefly reappears without the slide-out class
     await reload();
     leaving = null;
+  }
+
+  let readOnlyToast = $state<Toast>();
+  let readOnlySource = $state("");
+
+  /** Explains why an edit key did nothing on a todo mirrored from a source.
+   *  Returns true when `todo` is such a todo, so key handlers can bail out. */
+  function blockReadOnly(todo: Todo): boolean {
+    if (!isReadOnly(todo)) return false;
+    readOnlySource = todo.source_id ?? "";
+    readOnlyToast?.flash();
+    return true;
+  }
+
+  /** Enter on a mirrored todo: it can't be ticked off here, so open it where it lives. */
+  function openExternal(todo: Todo) {
+    if (todo.url) openUrl(todo.url);
+    else blockReadOnly(todo);
   }
 
   function openAbout() {
@@ -399,7 +421,7 @@
     selected = idx;
     if (notesEdit) return;
     if (!todo.notes) {
-      if (view === "open") startNotesEdit(idx, todo);
+      if (view === "open" && !isReadOnly(todo)) startNotesEdit(idx, todo);
       return;
     }
     notesOpenId = notesOpenId === todo.id ? null : todo.id;
@@ -623,6 +645,7 @@
         const t = flat[selected];
         if (t && view === "open") {
           e.preventDefault();
+          if (blockReadOnly(t)) break;
           startDueEdit(selected, t);
         }
         break;
@@ -632,6 +655,7 @@
         const t = flat[selected];
         if (t && view === "open") {
           e.preventDefault();
+          if (blockReadOnly(t)) break;
           startTextEdit(selected, t);
         }
         break;
@@ -640,6 +664,7 @@
         const t = flat[selected];
         if (t && view === "open") {
           e.preventDefault();
+          if (blockReadOnly(t)) break;
           openCatMenu(selected, t);
         }
         break;
@@ -669,6 +694,7 @@
         const t = flat[selected];
         if (t && view === "open") {
           e.preventDefault();
+          if (blockReadOnly(t)) break;
           startNotesEdit(selected, t);
         }
         break;
@@ -826,22 +852,36 @@
           tabindex="-1"
           onkeydown={() => {}}
         >
-          <button
-            class="check"
-            class:ticked={leaving?.id === todo.id && leaving.dir === "right"}
-            title={view === "open" ? "Mark as done" : "Move back to open"}
-            onclick={(e) => {
-              e.stopPropagation();
-              selected = idx;
-              toggleSelected();
-            }}
-          >
-            {#if leaving?.id === todo.id}
-              {leaving.dir === "right" ? "✓" : "○"}
-            {:else}
-              {view === "done" ? "✓" : "○"}
-            {/if}
-          </button>
+          {#if isReadOnly(todo)}
+            <button
+              class="check external"
+              title={todo.url ? `From ${todo.source_id} · open (Enter)` : `From ${todo.source_id} · read-only`}
+              onclick={(e) => {
+                e.stopPropagation();
+                selected = idx;
+                openExternal(todo);
+              }}
+            >
+              ↗
+            </button>
+          {:else}
+            <button
+              class="check"
+              class:ticked={leaving?.id === todo.id && leaving.dir === "right"}
+              title={view === "open" ? "Mark as done" : "Move back to open"}
+              onclick={(e) => {
+                e.stopPropagation();
+                selected = idx;
+                toggleSelected();
+              }}
+            >
+              {#if leaving?.id === todo.id}
+                {leaving.dir === "right" ? "✓" : "○"}
+              {:else}
+                {view === "done" ? "✓" : "○"}
+              {/if}
+            </button>
+          {/if}
           {#if editing?.id === todo.id && editing.field === "text"}
             <input
               class="edit text-edit"
@@ -867,7 +907,7 @@
                 </button>
               {/if}
               <span class="text" title={todo.text}>{todo.text}</span>
-              {#if view === "open"}
+              {#if view === "open" && !isReadOnly(todo)}
                 <button
                   class="pen"
                   title="Edit todo (E)"
@@ -911,7 +951,7 @@
                 {formatDue(todo.due_at)}
               </span>
             {/if}
-            {#if view === "open"}
+            {#if view === "open" && !isReadOnly(todo)}
               <button
                 class="pen"
                 title={todo.due_at ? "Edit due date (D)" : "Add due date (D)"}
@@ -954,7 +994,7 @@
                   {:else}{part.value}{/if}
                 {/each}
               </span>
-              {#if view === "open"}
+              {#if view === "open" && !isReadOnly(todo)}
                 <button class="pen notes-pen" title="Edit notes (N)" onclick={() => startNotesEdit(idx, todo)}>
                   ✎
                 </button>
@@ -967,12 +1007,13 @@
   </div>
 
   <Toast bind:this={printToast}>To print, open the full-size view with <kbd>L</kbd></Toast>
+  <Toast bind:this={readOnlyToast}>Read-only · from {readOnlySource}</Toast>
 
   <footer>
     <span class="hints">
       <span class="hint">
         <kbd>Enter</kbd>
-        {view === "open" ? "done" : "restore"}
+        {#if flat[selected] && isReadOnly(flat[selected])}open{:else}{view === "open" ? "done" : "restore"}{/if}
       </span>
       {#if view === "open"}
         <span class="hint"><kbd>E</kbd> edit</span>
@@ -1357,6 +1398,10 @@
   }
   .check.ticked {
     color: var(--ok);
+  }
+  /* mirrored from a data source: opens the item instead of ticking it */
+  .check.external:hover {
+    color: var(--accent);
   }
   .pen {
     background: none;

@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, type Todo } from "./lib/db";
+  import { openTodos, doneTodos, isReadOnly, type Todo } from "./lib/db";
   import { formatDue, dueStatus, linkify } from "./lib/parse";
   import {
     DUE_LABELS,
@@ -330,9 +330,21 @@
             {@const status = view === "open" ? dueStatus(todo.due_at) : null}
             <div class="todo">
               <div class="row">
-                <button class="check" tabindex="-1" title="View only — press L to edit" onclick={flashViewOnly}>
-                  {view === "done" ? "✓" : "○"}
-                </button>
+                {#if isReadOnly(todo)}
+                  <!-- mirrored from a data source: a link instead of a checkbox -->
+                  <button
+                    class="check"
+                    tabindex="-1"
+                    title={todo.url ? `From ${todo.source_id} · open in browser` : `From ${todo.source_id} · read-only`}
+                    onclick={() => todo.url && openUrl(todo.url)}
+                  >
+                    ↗
+                  </button>
+                {:else}
+                  <button class="check" tabindex="-1" title="View only — press L to edit" onclick={flashViewOnly}>
+                    {view === "done" ? "✓" : "○"}
+                  </button>
+                {/if}
                 <span class="text">{todo.text}</span>
                 {#if todo.due_at}
                   <span class="due" class:overdue={status === "overdue"} class:soon={status === "soon"}>
