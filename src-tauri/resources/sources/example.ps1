@@ -1,6 +1,6 @@
 # Example data source for Purser: prints two fixed items as JSON.
 # Try it with this entry in sources.json:
-#   { "id": "example", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{scripts}\example.ps1\"" }
+#   { "id": "example", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{scripts}/example.ps1\"" }
 # A real source does the same with data from an API (Jira, GitHub, ...).
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
