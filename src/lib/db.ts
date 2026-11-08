@@ -12,6 +12,18 @@ export interface Todo {
   due_at: string | null;
   created_at: string;
   done_at: string | null;
+  /** Data source the todo is mirrored from; `null` for the user's own todos.
+   *  Mirrored todos are read-only: see `isReadOnly`. */
+  source_id: string | null;
+  /** The item's id within its source. */
+  external_id: string | null;
+  /** Where the item lives, opened by Enter on a read-only todo. */
+  url: string | null;
+}
+
+/** Whether a todo comes from an external data source and can't be edited here. */
+export function isReadOnly(todo: Pick<Todo, "source_id">): boolean {
+  return todo.source_id !== null;
 }
 
 export interface Category {
@@ -39,7 +51,15 @@ function notifyChanged(): void {
 }
 
 const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, c.color AS category_color,
-  t.due_at, t.created_at, t.done_at`;
+  t.due_at, t.created_at, t.done_at, t.source_id, t.external_id, t.url`;
+
+/**
+ * Appended to every user edit: rows mirrored from a data source belong to
+ * the source and are only changed by its sync. The UI already blocks these
+ * edits; this keeps a stray call from changing what the next refresh would
+ * silently undo.
+ */
+const OWN_TODO = "AND source_id IS NULL";
 
 const FROM = `FROM todos t LEFT JOIN categories c ON c.id = t.category_id`;
 
@@ -148,10 +168,12 @@ export function todoKey(
   return JSON.stringify([text, category?.toLowerCase() ?? null, dueAt, notes || null]);
 }
 
-/** Keys of all stored todos, open and done. */
+/** Keys of the user's own stored todos, open and done. Mirrored source
+ *  items don't count: an import must not be skipped because the same text
+ *  happens to be in Jira. */
 export async function existingTodoKeys(): Promise<Set<string>> {
   const d = await getDb();
-  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM}`);
+  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM} WHERE t.source_id IS NULL`);
   return new Set(rows.map((t) => todoKey(t.text, t.category_name, t.due_at, t.notes)));
 }
 
@@ -175,19 +197,19 @@ export async function doneTodos(): Promise<Todo[]> {
 
 export async function markDone(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET done_at = $1 WHERE id = $2", [new Date().toISOString(), id]);
+  await d.execute(`UPDATE todos SET done_at = $1 WHERE id = $2 ${OWN_TODO}`, [new Date().toISOString(), id]);
   notifyChanged();
 }
 
 export async function markOpen(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET done_at = NULL WHERE id = $1", [id]);
+  await d.execute(`UPDATE todos SET done_at = NULL WHERE id = $1 ${OWN_TODO}`, [id]);
   notifyChanged();
 }
 
 export async function updateText(id: number, text: string): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
+  await d.execute(`UPDATE todos SET text = $1 WHERE id = $2 ${OWN_TODO}`, [text, id]);
   notifyChanged();
 }
 
@@ -195,32 +217,32 @@ export async function updateTodoCategory(id: number, categoryName: string | null
   const d = await getDb();
   const clean = categoryName?.trim() ?? "";
   if (!clean) {
-    await d.execute("UPDATE todos SET category_id = NULL WHERE id = $1", [id]);
+    await d.execute(`UPDATE todos SET category_id = NULL WHERE id = $1 ${OWN_TODO}`, [id]);
     notifyChanged();
     return;
   }
   // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
   if (!isValidCategoryName(clean)) return;
   const categoryId = await getOrCreateCategory(d, clean);
-  await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
+  await d.execute(`UPDATE todos SET category_id = $1 WHERE id = $2 ${OWN_TODO}`, [categoryId, id]);
   notifyChanged();
 }
 
 export async function updateNotes(id: number, notes: string | null): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET notes = $1 WHERE id = $2", [notes || null, id]);
+  await d.execute(`UPDATE todos SET notes = $1 WHERE id = $2 ${OWN_TODO}`, [notes || null, id]);
   notifyChanged();
 }
 
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);
+  await d.execute(`UPDATE todos SET due_at = $1 WHERE id = $2 ${OWN_TODO}`, [dueAt, id]);
   notifyChanged();
 }
 
 export async function deleteTodo(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("DELETE FROM todos WHERE id = $1", [id]);
+  await d.execute(`DELETE FROM todos WHERE id = $1 ${OWN_TODO}`, [id]);
   notifyChanged();
 }
 

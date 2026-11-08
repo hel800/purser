@@ -1250,6 +1250,19 @@ pub fn run() {
             sql: "ALTER TABLE todos ADD COLUMN notes TEXT;",
             kind: MigrationKind::Up,
         },
+        // Todos mirrored from an external data source: `source_id` names the
+        // source (NULL for the user's own todos, which stay the only editable
+        // ones), `external_id` the item there, `url` where to open it.
+        Migration {
+            version: 3,
+            description: "add external source columns to todos",
+            sql: "ALTER TABLE todos ADD COLUMN source_id TEXT;
+                  ALTER TABLE todos ADD COLUMN external_id TEXT;
+                  ALTER TABLE todos ADD COLUMN url TEXT;
+                  CREATE UNIQUE INDEX IF NOT EXISTS todos_source_item
+                    ON todos (source_id, external_id);",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
