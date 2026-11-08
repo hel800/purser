@@ -185,7 +185,11 @@ fn shell(command: &str) -> Command {
     let mut cmd = Command::new("cmd");
     // raw: cmd.exe has its own quoting rules, which Rust's argument
     // escaping would break for commands like `powershell -File "C:\a b.ps1"`
-    cmd.raw_arg("/C").raw_arg(command).creation_flags(CREATE_NO_WINDOW);
+    // With /S, cmd strips exactly the outer pair of quotes added here and
+    // keeps the command's own, also when it starts with a quoted program path.
+    cmd.raw_arg("/S /C")
+        .raw_arg(format!("\"{command}\""))
+        .creation_flags(CREATE_NO_WINDOW);
     cmd
 }
 
@@ -299,5 +303,18 @@ mod tests {
         assert_eq!(run_command("echo hello").unwrap().trim(), "hello");
         let err = run_command("echo broken 1>&2 && exit 3").unwrap_err();
         assert_eq!(err, "broken");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keeps_quotes_in_windows_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("a b.cmd");
+        std::fs::write(&script, "@echo {\"items\": []}").unwrap();
+        let expected = "{\"items\": []}";
+        let quoted_program = format!("\"{}\"", script.display());
+        assert_eq!(run_command(&quoted_program).unwrap().trim(), expected);
+        let quoted_argument = format!("cmd /C \"{}\"", script.display());
+        assert_eq!(run_command(&quoted_argument).unwrap().trim(), expected);
     }
 }
