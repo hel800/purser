@@ -264,3 +264,72 @@ export async function updateCategory(id: number, name: string, color: string): P
   ]);
   notifyChanged();
 }
+
+/** One item of a data source, already validated (see `parseSourceOutput`). */
+export interface SourceItem {
+  id: string;
+  text: string;
+  url: string | null;
+  dueAt: string | null;
+  notes: string | null;
+}
+
+/** Rows per upsert: 8 parameters each, well below SQLite's limit. */
+const SYNC_CHUNK = 500;
+
+/**
+ * Makes the stored todos of `sourceId` match `items`: new items are added,
+ * known ones (same id) updated, and items the source no longer returns are
+ * removed, which is how they get "done": the source closed them. Only called
+ * with a complete, successful result, so a failed refresh keeps the last
+ * good items.
+ */
+export async function syncSourceItems(
+  sourceId: string,
+  category: string | null,
+  items: SourceItem[]
+): Promise<void> {
+  const d = await getDb();
+  const categoryId = category ? await getOrCreateCategory(d, category) : null;
+  const createdAt = new Date().toISOString();
+  try {
+    for (let i = 0; i < items.length; i += SYNC_CHUNK) {
+      const chunk = items.slice(i, i + SYNC_CHUNK);
+      const params: unknown[] = [];
+      const rows = chunk.map((item) => {
+        const n = params.length;
+        params.push(item.text, item.notes, categoryId, item.dueAt, createdAt, sourceId, item.id, item.url);
+        const placeholders = Array.from({ length: 8 }, (_, k) => `$${n + k + 1}`);
+        return `(${placeholders.join(", ")})`;
+      });
+      await d.execute(
+        `INSERT INTO todos (text, notes, category_id, due_at, created_at, source_id, external_id, url)
+           VALUES ${rows.join(", ")}
+           ON CONFLICT (source_id, external_id) DO UPDATE SET
+             text = excluded.text, notes = excluded.notes, category_id = excluded.category_id,
+             due_at = excluded.due_at, url = excluded.url, done_at = NULL`,
+        params
+      );
+    }
+    // the ids go in as one JSON array: a NOT IN list with a parameter per id
+    // could exceed SQLite's parameter limit for a large source
+    await d.execute(
+      `DELETE FROM todos WHERE source_id = $1
+         AND external_id NOT IN (SELECT value FROM json_each($2))`,
+      [sourceId, JSON.stringify(items.map((item) => item.id))]
+    );
+  } finally {
+    notifyChanged();
+  }
+}
+
+/** Removes the mirrored todos of sources that are no longer configured. */
+export async function removeOtherSources(configuredIds: string[]): Promise<void> {
+  const d = await getDb();
+  const res = await d.execute(
+    `DELETE FROM todos WHERE source_id IS NOT NULL
+       AND source_id NOT IN (SELECT value FROM json_each($1))`,
+    [JSON.stringify(configuredIds)]
+  );
+  if (res.rowsAffected > 0) notifyChanged();
+}
