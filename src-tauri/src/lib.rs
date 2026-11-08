@@ -12,6 +12,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod sources;
 #[cfg(test)]
 mod tests;
 
@@ -1044,16 +1045,26 @@ fn build_app_menu(
 
     let full_list = item("fulllist", "Show full list")?;
     let import = item("import", "Import todos…")?;
+    let sources_menu = Submenu::with_items(
+        app,
+        "Data sources",
+        true,
+        &[
+            &item("refresh_sources", "Refresh now")?,
+            &item("open_sources", "Open sources file…")?,
+        ],
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let help = item(&owned_id("help"), "Keyboard shortcuts")?;
     let about = item(&owned_id("about"), "About Purser")?;
     let update = item("update", "Check for updates…")?;
     let quit = item("quit", "Quit")?;
-    let entries: [(&str, &dyn IsMenuItem<tauri::Wry>); 10] = [
+    let entries: [(&str, &dyn IsMenuItem<tauri::Wry>); 11] = [
         ("add", &add),
         ("list", &list),
         ("fulllist", &full_list),
         ("import", &import),
+        ("sources", &sources_menu),
         ("settings", &settings_menu),
         ("separator", &separator),
         ("help", &help),
@@ -1088,6 +1099,19 @@ fn on_app_menu_event(app: &AppHandle, event: MenuEvent) {
         "list" => toggle_popup(app),
         "fulllist" => show_list(app, serde_json::Value::Null),
         "import" => start_import(app),
+        // the popup webview runs the sources and syncs their items
+        "refresh_sources" => {
+            let _ = app.emit_to("popup", "purser://refresh-sources", ());
+        }
+        "open_sources" => {
+            if let Err(e) = sources::open_sources_file(app) {
+                app.dialog()
+                    .message(format!("Could not open sources.json: {e}"))
+                    .title("Data sources")
+                    .kind(MessageDialogKind::Error)
+                    .show(|_| {});
+            }
+        }
         "autostart" => {
             let enable = !app.autolaunch().is_enabled().unwrap_or(false);
             let _ = if enable {
@@ -1303,7 +1327,9 @@ pub fn run() {
             import_finished,
             check_update,
             install_update,
-            show_app_menu
+            show_app_menu,
+            sources::list_sources,
+            sources::run_source
         ])
         .setup(|app| {
             let (settings, first_run) = load_settings(app.handle());

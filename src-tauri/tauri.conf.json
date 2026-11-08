@@ -93,6 +93,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": ["nsis"],
+    "resources": {
+      "resources/sources/": "sources/"
+    },
     "windows": {
       "nsis": {
         "customLanguageFiles": {
