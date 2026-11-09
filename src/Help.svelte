@@ -243,7 +243,7 @@
     <p class="tip">
       Dates and <kbd>#categories</kbd> parse as you type — try
       <span class="code">
-        {dateLanguage() === "de" ? "Miete zahlen Fr 17 Uhr #finanzen" : "pay rent friday 5pm #finance"}
+        {dateLanguage() === "de" ? "pay rent Fr 17 Uhr #finance" : "pay rent friday 5pm #finance"}
       </span>
     </p>
   </div>
