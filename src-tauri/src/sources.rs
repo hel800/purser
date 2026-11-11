@@ -66,7 +66,22 @@ fn sources_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// Folder of the source scripts shipped with Purser, referenced as
 /// `{scripts}` in a command.
 fn scripts_dir(app: &AppHandle) -> Option<PathBuf> {
-    app.path().resource_dir().ok().map(|dir| dir.join("sources"))
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|dir| strip_verbatim_prefix(&dir).join("sources"))
+}
+
+/// Tauri canonicalizes the exe path, which on Windows yields a verbatim
+/// `\\?\C:\…` path. Such paths take no `/` separators, so
+/// `{scripts}/jira.ps1` would not be found; the plain `C:\…` form does.
+pub fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        // `\\?\UNC\server\share` is a network path, which needs its `\\`
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
 }
 
 /// Parses `sources.json`. A broken file is reported, not replaced: the user
@@ -290,6 +305,17 @@ mod tests {
             "powershell -File C:/Purser/sources/jira.ps1"
         );
         assert_eq!(expand_command("{scripts}/x", None), "{scripts}/x");
+    }
+
+    #[test]
+    fn strips_verbatim_prefix_of_local_paths_only() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Program Files\Purser")),
+            PathBuf::from(r"C:\Program Files\Purser")
+        );
+        let unc = Path::new(r"\\?\UNC\server\share");
+        assert_eq!(strip_verbatim_prefix(unc), unc.to_path_buf());
+        assert_eq!(strip_verbatim_prefix(Path::new("/opt/purser")), PathBuf::from("/opt/purser"));
     }
 
     #[test]
