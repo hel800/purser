@@ -17,7 +17,7 @@ export interface Todo {
   source_id: string | null;
   /** The item's id within its source. */
   external_id: string | null;
-  /** Where the item lives, opened by Enter on a read-only todo. */
+  /** Where the item lives, opened by `O` (see `todoLink`). */
   url: string | null;
 }
 
@@ -54,10 +54,11 @@ const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, 
   t.due_at, t.created_at, t.done_at, t.source_id, t.external_id, t.url`;
 
 /**
- * Appended to every user edit: rows mirrored from a data source belong to
- * the source and are only changed by its sync. The UI already blocks these
- * edits; this keeps a stray call from changing what the next refresh would
- * silently undo.
+ * Appended to user edits of what a data source owns (text, due date, notes,
+ * done state): those are only changed by the source's sync. The UI already
+ * blocks these edits; this keeps a stray call from changing what the next
+ * refresh would silently undo. The category is the user's: sync never
+ * overwrites it, so it stays editable on mirrored todos too.
  */
 const OWN_TODO = "AND source_id IS NULL";
 
@@ -217,14 +218,14 @@ export async function updateTodoCategory(id: number, categoryName: string | null
   const d = await getDb();
   const clean = categoryName?.trim() ?? "";
   if (!clean) {
-    await d.execute(`UPDATE todos SET category_id = NULL WHERE id = $1 ${OWN_TODO}`, [id]);
+    await d.execute("UPDATE todos SET category_id = NULL WHERE id = $1", [id]);
     notifyChanged();
     return;
   }
   // reject names quick-add's #tag syntax couldn't reference (e.g. with spaces)
   if (!isValidCategoryName(clean)) return;
   const categoryId = await getOrCreateCategory(d, clean);
-  await d.execute(`UPDATE todos SET category_id = $1 WHERE id = $2 ${OWN_TODO}`, [categoryId, id]);
+  await d.execute("UPDATE todos SET category_id = $1 WHERE id = $2", [categoryId, id]);
   notifyChanged();
 }
 
@@ -278,18 +279,23 @@ export interface SourceItem {
 const SYNC_CHUNK = 500;
 
 /**
- * Makes the stored todos of `sourceId` match `items`: new items are added,
- * known ones (same id) updated, and items the source no longer returns are
- * removed, which is how they get "done": the source closed them. Only called
- * with a complete, successful result, so a failed refresh keeps the last
- * good items.
+ * Makes the stored todos of `sourceId` match `items`: new items are added
+ * in `category`, known ones (same id) updated, and items the source no
+ * longer returns are removed, which is how they get "done": the source
+ * closed them. A known item keeps the category the user gave it. Only
+ * called with a complete, successful result, so a failed refresh keeps the
+ * last good items. Returns whether this was the source's first sync ever.
  */
 export async function syncSourceItems(
   sourceId: string,
   category: string | null,
   items: SourceItem[]
-): Promise<void> {
+): Promise<{ firstSync: boolean }> {
   const d = await getDb();
+  const before = await d.select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM source_syncs WHERE source_id = $1",
+    [sourceId]
+  );
   const categoryId = category ? await getOrCreateCategory(d, category) : null;
   const createdAt = new Date().toISOString();
   try {
@@ -306,7 +312,7 @@ export async function syncSourceItems(
         `INSERT INTO todos (text, notes, category_id, due_at, created_at, source_id, external_id, url)
            VALUES ${rows.join(", ")}
            ON CONFLICT (source_id, external_id) DO UPDATE SET
-             text = excluded.text, notes = excluded.notes, category_id = excluded.category_id,
+             text = excluded.text, notes = excluded.notes,
              due_at = excluded.due_at, url = excluded.url, done_at = NULL`,
         params
       );
@@ -318,18 +324,36 @@ export async function syncSourceItems(
          AND external_id NOT IN (SELECT value FROM json_each($2))`,
       [sourceId, JSON.stringify(items.map((item) => item.id))]
     );
+    await d.execute(
+      `INSERT INTO source_syncs (source_id, synced_at) VALUES ($1, $2)
+         ON CONFLICT (source_id) DO UPDATE SET synced_at = excluded.synced_at`,
+      [sourceId, new Date().toISOString()]
+    );
   } finally {
     notifyChanged();
   }
+  return { firstSync: before[0].n === 0 };
+}
+
+/** When each source last synced successfully (ISO time by source id). */
+export async function sourceSyncTimes(): Promise<Record<string, string>> {
+  const d = await getDb();
+  const rows = await d.select<{ source_id: string; synced_at: string }[]>(
+    "SELECT source_id, synced_at FROM source_syncs"
+  );
+  return Object.fromEntries(rows.map((r) => [r.source_id, r.synced_at]));
 }
 
 /** Removes the mirrored todos of sources that are no longer configured. */
 export async function removeOtherSources(configuredIds: string[]): Promise<void> {
   const d = await getDb();
+  const ids = JSON.stringify(configuredIds);
+  // forgetting the sync too: adding the source again confirms it again
+  await d.execute("DELETE FROM source_syncs WHERE source_id NOT IN (SELECT value FROM json_each($1))", [ids]);
   const res = await d.execute(
     `DELETE FROM todos WHERE source_id IS NOT NULL
        AND source_id NOT IN (SELECT value FROM json_each($1))`,
-    [JSON.stringify(configuredIds)]
+    [ids]
   );
   if (res.rowsAffected > 0) notifyChanged();
 }

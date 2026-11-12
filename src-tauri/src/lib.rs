@@ -1264,6 +1264,17 @@ pub fn run() {
                     ON todos (source_id, external_id);",
             kind: MigrationKind::Up,
         },
+        // when each data source last synced successfully; a source without
+        // a row has never synced, which the popup confirms once
+        Migration {
+            version: 4,
+            description: "track data source syncs",
+            sql: "CREATE TABLE IF NOT EXISTS source_syncs (
+                    source_id TEXT PRIMARY KEY,
+                    synced_at TEXT NOT NULL
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
