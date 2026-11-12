@@ -23,10 +23,10 @@ const MAX_OUTPUT_BYTES: u64 = 5 * 1024 * 1024;
 
 pub const DEFAULT_REFRESH_MINUTES: u32 = 15;
 
-/// Written by "Open sources file…" when there is no file yet. JSON has no
-/// comments, so the pointer to the docs goes into an ignored field.
+/// Written on first start. JSON has no comments, so the pointer to the docs
+/// goes into an ignored field.
 const TEMPLATE: &str = r#"{
-  "_help": "Each source runs a command that prints JSON items; they show up as read-only todos. See the README section 'External data sources'.",
+  "_help": "Each source runs a command that prints JSON items; they show up as read-only todos. Format and examples: https://github.com/hel800/purser/blob/main/docs/data-sources.md",
   "sources": []
 }
 "#;
@@ -236,20 +236,19 @@ pub async fn run_source(app: AppHandle, id: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?
 }
 
-/// Tray entry "Open sources file…": creates the file on first use and opens
-/// it in the default editor.
-pub fn open_sources_file(app: &AppHandle) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
-    let path = sources_path(app)?;
-    if !path.exists() {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&path, TEMPLATE).map_err(|e| e.to_string())?;
+/// Creates `sources.json` with an empty list on first start, so it's there
+/// to fill in (see docs/data-sources.md). An existing file is never touched.
+pub fn ensure_sources_file(app: &AppHandle) {
+    let Ok(path) = sources_path(app) else { return };
+    if path.exists() {
+        return;
     }
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| e.to_string())
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Err(e) = std::fs::write(&path, TEMPLATE) {
+        eprintln!("could not create sources.json: {e}");
+    }
 }
 
 #[cfg(test)]
