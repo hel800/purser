@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, linkify } from "./lib/parse";
+  import { dateLanguage, formatDue, dueStatus, parseDueDate, parseDueEntry, linkify } from "./lib/parse";
   import {
     buildCatMenuItems,
     catMenuChoice,
@@ -624,7 +624,7 @@
 
 <main>
   <header>
-    <Logo size={20} />
+    <Logo size={20} menu />
     <button class="tab" class:active={view === "open"} onclick={() => switchView("open")}>
       Open
     </button>
@@ -801,7 +801,7 @@
               onkeydown={onEditKeydown}
               onfocusout={cancelEdit}
               use:focusInput
-              placeholder="friday 5pm · empty = none"
+              placeholder={dateLanguage() === "de" ? "Fr 17 Uhr · empty = none" : "friday 5pm · empty = none"}
               spellcheck="false"
             />
             <span class="preview" class:past={editPreview.past}>{editPreview.text}</span>

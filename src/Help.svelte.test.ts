@@ -32,7 +32,7 @@ describe("Help", () => {
   it("shows the German date examples for German date input", async () => {
     await renderHelp({}, { ...TEST_SETTINGS, dateLanguage: "de" });
     expect(screen.getByText("KW 44")).toBeTruthy();
-    expect(screen.getByText(/Miete zahlen/)).toBeTruthy();
+    expect(screen.getByText(/pay rent Fr 17 Uhr/)).toBeTruthy();
   });
 
   it("closes with Esc and the ✕", async () => {

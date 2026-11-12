@@ -167,7 +167,7 @@ describe("list", () => {
     await key("e");
     expect(document.querySelector("input")).toBeNull();
     await key("c");
-    expect(document.querySelector(".menu")).toBeNull();
+    expect(document.querySelector(".menu-backdrop .menu")).toBeNull();
   });
 });
 
@@ -324,10 +324,10 @@ describe("category menu", () => {
     await fireEvent.input(menuInput(), { target: { value: "two words" } });
     expect(document.querySelector(".menu-create-wrap.invalid")).not.toBeNull();
     await key("Enter", {}, menuInput()); // invalid: nothing happens
-    expect(document.querySelector(".menu")).not.toBeNull();
+    expect(document.querySelector(".menu-backdrop .menu")).not.toBeNull();
     await fireEvent.input(menuInput(), { target: { value: "errands" } });
     await key("Enter", {}, menuInput());
-    await waitFor(() => expect(document.querySelector(".menu")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".menu-backdrop .menu")).toBeNull());
     expect((await todoNamed("pay rent")).category_name).toBe("errands");
   });
 
@@ -344,7 +344,7 @@ describe("category menu", () => {
     await key("Tab", {}, menuInput());
     expect(menuInput().value).toBe("Home");
     await key("Enter", {}, menuInput());
-    await waitFor(() => expect(document.querySelector(".menu")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".menu-backdrop .menu")).toBeNull());
   });
 
   it("picks a row with the arrow keys and j/k", async () => {
@@ -359,7 +359,7 @@ describe("category menu", () => {
     await key("k");
     expect(active()!.textContent!.trim()).toBe("Work");
     await key("Enter");
-    await waitFor(() => expect(document.querySelector(".menu")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".menu-backdrop .menu")).toBeNull());
     expect((await todoNamed("pay rent")).category_name).toBe("Work");
   });
 
@@ -378,7 +378,7 @@ describe("category menu", () => {
     await fireEvent.mouseMove(none);
     expect(active()).toBe(none);
     await fireEvent.click(none);
-    await waitFor(() => expect(document.querySelector(".menu")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".menu-backdrop .menu")).toBeNull());
     expect((await todoNamed("pay rent")).category_id).toBeNull();
   });
 
@@ -387,20 +387,20 @@ describe("category menu", () => {
     await fireEvent.input(menuInput(), { target: { value: "errands" } });
     await fireEvent.mouseMove(document.querySelector(".menu-item.none")!);
     await key("Enter", {}, menuInput());
-    await waitFor(() => expect(document.querySelector(".menu")).toBeNull());
+    await waitFor(() => expect(document.querySelector(".menu-backdrop .menu")).toBeNull());
     expect((await todoNamed("pay rent")).category_name).toBe("errands");
   });
 
   it("closes with Esc and a click on the backdrop", async () => {
     await openMenu();
     await key("Escape", {}, menuInput());
-    expect(document.querySelector(".menu")).toBeNull();
+    expect(document.querySelector(".menu-backdrop .menu")).toBeNull();
     await key("c");
-    await fireEvent.click(document.querySelector(".menu")!); // inside: stays
-    expect(document.querySelector(".menu")).not.toBeNull();
+    await fireEvent.click(document.querySelector(".menu-backdrop .menu")!); // inside: stays
+    expect(document.querySelector(".menu-backdrop .menu")).not.toBeNull();
     await fireEvent.scroll(menuInput());
     await fireEvent.click(document.querySelector(".menu-backdrop")!);
-    expect(document.querySelector(".menu")).toBeNull();
+    expect(document.querySelector(".menu-backdrop .menu")).toBeNull();
     expect(argsOf(calls, "plugin:window|hide")).toEqual([]);
   });
 });

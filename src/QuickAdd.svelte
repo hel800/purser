@@ -4,7 +4,7 @@
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { parseTodo, formatDue } from "./lib/parse";
+  import { dateLanguage, parseTodo, formatDue } from "./lib/parse";
   import { completeTag, tagAtCaret, tagGhost, tagSuggestions } from "./lib/quickadd";
   import { addTodo, listCategories, type Category } from "./lib/db";
   import { initSettings } from "./lib/settings.svelte";
@@ -153,7 +153,7 @@
 
 <main>
   <div class="titlebar">
-    <Logo size={18} />
+    <Logo size={18} menu />
     <span>Add new todo</span>
     <button class="small-btn" title="Keyboard shortcuts (? / F1)" onclick={() => invoke("open_help")}>?</button>
     <img class="wordmark" src={wordmark} alt="Purser" width="60" height="9" />
@@ -164,7 +164,7 @@
       bind:value
       oninput={onInput}
       rows="1"
-      placeholder="pay rent friday 5pm #finance"
+      placeholder={dateLanguage() === "de" ? "pay rent Fr 17 Uhr #finance" : "pay rent friday 5pm #finance"}
       spellcheck="false"
     ></textarea>
     <span class="ghost" aria-hidden="true">

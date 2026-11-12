@@ -20,6 +20,6 @@ describe("About", () => {
     await fireEvent.keyDown(window, { key: "Escape" });
     await fireEvent.keyDown(window, { key: "a" });
     await fireEvent.click(screen.getByTitle("Close (Esc)"));
-    expect(argsOf(calls, "plugin:window|hide")).toHaveLength(2);
+    expect(argsOf(calls, "close_about")).toHaveLength(2);
   });
 });
