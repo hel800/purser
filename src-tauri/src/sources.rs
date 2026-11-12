@@ -314,12 +314,18 @@ mod tests {
         );
         let unc = Path::new(r"\\?\UNC\server\share");
         assert_eq!(strip_verbatim_prefix(unc), unc.to_path_buf());
-        assert_eq!(strip_verbatim_prefix(Path::new("/opt/purser")), PathBuf::from("/opt/purser"));
+        assert_eq!(
+            strip_verbatim_prefix(Path::new("/opt/purser")),
+            PathBuf::from("/opt/purser")
+        );
     }
 
     #[test]
     fn first_line_skips_blank_lines() {
-        assert_eq!(first_line("\n  \n 401 Unauthorized \nmore"), Some("401 Unauthorized".into()));
+        assert_eq!(
+            first_line("\n  \n 401 Unauthorized \nmore"),
+            Some("401 Unauthorized".into())
+        );
         assert_eq!(first_line("  "), None);
     }
 
