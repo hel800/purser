@@ -1,12 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emit } from "@tauri-apps/api/event";
+import { argsOf, installIpc, type IpcCall } from "../test/ipc";
+import { initSettings, settings, SETTINGS_TIMEOUT_MS, type AppSettings } from "./settings.svelte";
 
-const invoke = vi.fn();
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
-
-const { initSettings, settings, SETTINGS_TIMEOUT_MS } = await import("./settings.svelte");
-
-const STORED = {
+const STORED: AppSettings = {
   hour24: false,
   autoUpdateCheck: false,
   quickAddShortcut: "ctrl+shift+a",
@@ -16,37 +13,52 @@ const STORED = {
   dateLanguage: "de",
 };
 
+/** Backend whose `get_settings` fails `failures` times before answering. */
+function backend(failures: number): IpcCall[] {
+  let attempts = 0;
+  return installIpc({
+    get_settings: () => {
+      if (attempts++ < failures) throw "state not managed";
+      return STORED;
+    },
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
-  invoke.mockReset();
   settings.hour24 = true;
   settings.dateLanguage = "auto";
 });
-afterEach(() => vi.useRealTimers());
 
 describe("initSettings", () => {
   it("asks again while the backend is still starting", async () => {
-    invoke
-      .mockRejectedValueOnce("state not managed")
-      .mockRejectedValueOnce("state not managed")
-      .mockResolvedValue(STORED);
+    const calls = backend(2);
     const done = initSettings();
     await vi.runAllTimersAsync();
     await done;
-    expect(invoke).toHaveBeenCalledTimes(3);
+    expect(argsOf(calls, "get_settings")).toHaveLength(3);
     expect(settings.hour24).toBe(false);
     expect(settings.dateLanguage).toBe("de");
   });
 
   it("gives up and keeps the defaults without a backend", async () => {
-    invoke.mockRejectedValue("no backend");
+    const calls = backend(Infinity);
     const done = initSettings();
     await vi.advanceTimersByTimeAsync(SETTINGS_TIMEOUT_MS + 100);
     await done;
     expect(settings.hour24).toBe(true);
     expect(settings.dateLanguage).toBe("auto");
-    const calls = invoke.mock.calls.length;
+    const asked = argsOf(calls, "get_settings").length;
     await vi.advanceTimersByTimeAsync(1000);
-    expect(invoke.mock.calls.length).toBe(calls);
+    expect(argsOf(calls, "get_settings")).toHaveLength(asked);
+  });
+
+  it("follows settings changed in another window", async () => {
+    backend(0);
+    await initSettings();
+    await emit("purser://settings-changed", { ...STORED, hour24: true, listPretty: "Ctrl+L" });
+    expect(settings.hour24).toBe(true);
+    expect(settings.listPretty).toBe("Ctrl+L");
+    expect(settings.quickAddShortcut).toBe("ctrl+shift+a");
   });
 });

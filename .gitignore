@@ -4,3 +4,4 @@ src-tauri/target/
 src-tauri/gen/schemas/
 tauri-dev*.log
 tauri-dev*.err.log
+coverage/

@@ -202,3 +202,29 @@ fn read_import_file_reads_txt_and_decodes_the_ansi_csv() {
     assert!(text.contains("Zahlen aus dem Controlling…"));
     assert!(text.contains("Café-Termin mit Müller ‚kurz‘"));
 }
+
+// migrations
+
+/// The SQL as it shipped inline before it moved to migrations/*.sql. A
+/// changed byte changes sqlx's checksum and existing databases refuse to open.
+#[test]
+fn migrations_keep_the_shipped_sql() {
+    assert_eq!(
+        MIGRATION_1_SQL,
+        "CREATE TABLE IF NOT EXISTS categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    color TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                  );
+                  CREATE TABLE IF NOT EXISTS todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    due_at TEXT,
+                    created_at TEXT NOT NULL,
+                    done_at TEXT,
+                    category_id INTEGER
+                  );"
+    );
+    assert_eq!(MIGRATION_2_SQL, "ALTER TABLE todos ADD COLUMN notes TEXT;");
+}

@@ -37,3 +37,38 @@ export async function installUpdate(onProgress: (percent: number | null) => void
     unlisten();
   }
 }
+
+/**
+ * The popup's self-update banner: offered → downloading → installing (the
+ * installer takes over and the app exits). "uptodate" and "checkfailed" are
+ * the brief answers to a manual check; null hides the banner.
+ */
+export type UpdatePhase =
+  | "offer"
+  | "downloading"
+  | "installing"
+  | "error" // install failed; U retries
+  | "uptodate" // manual check: nothing new (brief)
+  | "checkfailed" // manual check: could not ask (brief)
+  | null;
+
+/** An install is under way: no check may replace its banner. */
+export function isInstalling(phase: UpdatePhase): boolean {
+  return phase === "downloading" || phase === "installing";
+}
+
+/** The banner offers U: a found update, or a failed install to retry. */
+export function canStartInstall(phase: UpdatePhase): boolean {
+  return phase === "offer" || phase === "error";
+}
+
+/** The phase while the download reports `percent` (null: size unknown). */
+export function installPhase(percent: number | null): "downloading" | "installing" {
+  return percent === 100 ? "installing" : "downloading";
+}
+
+/** Opening the popup checks again when no banner is shown and the last
+ *  answered check is more than `UPDATE_SHOW_CHECK_MIN_MS` old. */
+export function shouldCheckOnShow(phase: UpdatePhase, lastCheck: number, now: number): boolean {
+  return !phase && now - lastCheck > UPDATE_SHOW_CHECK_MIN_MS;
+}
