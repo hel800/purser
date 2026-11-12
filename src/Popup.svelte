@@ -3,8 +3,8 @@
   import { listen } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, isReadOnly, type Todo, type Category } from "./lib/db";
-  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify } from "./lib/parse";
+  import { openTodos, doneTodos, markDone, markOpen, deleteTodo, updateDue, updateText, updateNotes, updateCategory, updateTodoCategory, listCategories, isReadOnly, sourceSyncTimes, type Todo, type Category } from "./lib/db";
+  import { formatDue, dueStatus, parseDueDate, parseDueEntry, isValidCategoryName, linkify, todoLink } from "./lib/parse";
   import FilterBar from "./lib/FilterBar.svelte";
   import {
     filterTodos,
@@ -20,7 +20,7 @@
   import { slide } from "svelte/transition";
   import { initSettings, settings } from "./lib/settings.svelte";
   import { runImport, type ImportRequest } from "./lib/import";
-  import { startSourceRefresh } from "./lib/sources";
+  import { CONFIG_ERROR_ID, lockTooltip, startSourceRefresh, type SourceRefresher } from "./lib/sources";
   import { getVersion } from "@tauri-apps/api/app";
   import {
     checkForUpdate,
@@ -32,6 +32,8 @@
   } from "./lib/updater";
   import Logo from "./lib/Logo.svelte";
   import Toast from "./lib/Toast.svelte";
+  import Lock from "./lib/Lock.svelte";
+  import Warning from "./lib/Warning.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
   type View = "open" | "done";
@@ -73,6 +75,22 @@
   // the latest failure per data source, shown until its next successful
   // refresh or until dismissed; the source's last good items stay listed
   let sourceErrors: Record<string, string> = $state({});
+  // one-time confirmation that a new source delivered its first items
+  let sourceConnected: { id: string; count: number } | null = $state(null);
+  // last successful sync per source, shown in the tooltip of its todos' lock
+  let syncTimes: Record<string, string> = $state({});
+  let sources: SourceRefresher | undefined;
+  let sourceConnectedTimer: ReturnType<typeof setTimeout> | undefined;
+  const SOURCE_CONNECTED_MS = 30_000;
+
+  /** Confirms a new source's first sync for a while (or until ✕). */
+  function showSourceConnected(id: string, count: number) {
+    sourceConnected = { id, count };
+    clearTimeout(sourceConnectedTimer);
+    sourceConnectedTimer = setTimeout(() => (sourceConnected = null), SOURCE_CONNECTED_MS);
+  }
+  // opening the popup refreshes sources whose last run is older than this
+  const SOURCE_REFRESH_ON_SHOW_MS = 60_000;
 
   // filter bar (Open view only): category (null = all, -1 = uncategorized)
   // and a due-date stage, both cycled by keyboard or click
@@ -262,6 +280,7 @@
       setTimeout(() => {
         if (!updatePhase && Date.now() - lastUpdateCheck > UPDATE_SHOW_CHECK_MIN_MS) lookForUpdate();
       }, 1000);
+      sources?.refresh(SOURCE_REFRESH_ON_SHOW_MS);
       const state = e.payload;
       const nextView = state?.view ?? "open";
       const data = nextView === "open" ? await openTodos() : await doneTodos();
@@ -278,9 +297,13 @@
     // the result and then opens the list, which refreshes it
     const unlistenImport = listen<ImportRequest>("purser://import", (e) => runImport(e.payload));
     // sources run here too, for the same reason; a hidden popup reloads on show anyway
-    const stopSources = startSourceRefresh({
-      onSynced: async (id) => {
+    sourceSyncTimes().then((times) => (syncTimes = times));
+    sources = startSourceRefresh({
+      onSynced: async (id, result) => {
         delete sourceErrors[id];
+        if (id === CONFIG_ERROR_ID) return;
+        if (result.firstSync) showSourceConnected(id, result.count);
+        syncTimes = await sourceSyncTimes();
         // keep an edit in progress intact; the next show reloads anyway
         if (!editing && !notesEdit && !catMenu && !catEdit && (await win.isVisible())) await reload();
       },
@@ -289,7 +312,8 @@
       },
     });
     return () => {
-      stopSources();
+      sources?.stop();
+      clearTimeout(sourceConnectedTimer);
       clearInterval(updateTimer);
       clearTimeout(upToDateTimer);
       updateRetries.forEach(clearTimeout);
@@ -302,6 +326,8 @@
   // flat index across groups follows the todos array order because
   // grouping preserves the SQL sort (category, then due date)
   let flat = $derived(groups.flatMap((g) => g.todos));
+  let selectedTodo = $derived(flat[selected] as Todo | undefined);
+  let selectedReadOnly = $derived(selectedTodo !== undefined && isReadOnly(selectedTodo));
 
   // moving the selection to another todo auto-hides an open notes panel
   $effect(() => {
@@ -316,10 +342,7 @@
   async function toggleSelected() {
     const t = flat[selected];
     if (!t || leaving) return;
-    if (isReadOnly(t)) {
-      openExternal(t);
-      return;
-    }
+    if (blockReadOnly(t)) return;
     leaving = { id: t.id, dir: view === "open" ? "right" : "left" };
     await new Promise((r) => setTimeout(r, 460));
     if (view === "open") await markDone(t.id);
@@ -331,6 +354,7 @@
   }
 
   let readOnlyToast = $state<Toast>();
+  let refreshToast = $state<Toast>();
   let readOnlySource = $state("");
 
   /** Explains why an edit key did nothing on a todo mirrored from a source.
@@ -342,10 +366,10 @@
     return true;
   }
 
-  /** Enter on a mirrored todo: it can't be ticked off here, so open it where it lives. */
-  function openExternal(todo: Todo) {
-    if (todo.url) openUrl(todo.url);
-    else blockReadOnly(todo);
+  /** O, or a click on a mirrored todo's lock: opens the todo's link, if it has one. */
+  function openLink(todo: Todo) {
+    const link = todoLink(todo);
+    if (link) openUrl(link);
   }
 
   function openAbout() {
@@ -681,7 +705,6 @@
         const t = flat[selected];
         if (t && view === "open") {
           e.preventDefault();
-          if (blockReadOnly(t)) break;
           openCatMenu(selected, t);
         }
         break;
@@ -749,6 +772,20 @@
         e.preventDefault();
         openHelp();
         break;
+      case "o": {
+        const t = flat[selected];
+        if (t) {
+          e.preventDefault();
+          openLink(t);
+        }
+        break;
+      }
+      case "F5":
+        // also keeps the webview from reloading itself
+        e.preventDefault();
+        refreshToast?.flash();
+        await sources?.refresh();
+        break;
     }
   }
 
@@ -811,9 +848,27 @@
     </div>
   {/if}
 
+  {#if sourceConnected}
+    <div class="update" role="status">
+      <span class="update-text">
+        Data source {sourceConnected.id} connected · {sourceConnected.count}
+        {sourceConnected.count === 1 ? "item" : "items"} added
+      </span>
+      <span class="update-keys">
+        <button class="update-x" onclick={() => (sourceConnected = null)} title="Dismiss">✕</button>
+      </span>
+    </div>
+  {/if}
   {#each Object.entries(sourceErrors) as [id, message] (id)}
     <div class="update error" role="status">
-      <span class="update-text" title={message}>Data source {id}: {message}</span>
+      <span class="update-text" title={message}>
+        <span class="warn"><Warning /></span>
+        {#if id === CONFIG_ERROR_ID}
+          {id} is invalid · {message}
+        {:else}
+          {id} not synced · {message}
+        {/if}
+      </span>
       <span class="update-keys">
         <button class="update-x" onclick={() => delete sourceErrors[id]} title="Dismiss">✕</button>
       </span>
@@ -869,6 +924,7 @@
         <div
           class="todo"
           class:selected={idx === selected}
+          class:readonly={isReadOnly(todo)}
           class:leaving-right={leaving?.id === todo.id && leaving.dir === "right"}
           class:leaving-left={leaving?.id === todo.id && leaving.dir === "left"}
           use:scrollIntoViewWhen={idx === selected}
@@ -881,14 +937,14 @@
           {#if isReadOnly(todo)}
             <button
               class="check external"
-              title={todo.url ? `From ${todo.source_id} · open (Enter)` : `From ${todo.source_id} · read-only`}
+              title={lockTooltip(todo, syncTimes[todo.source_id ?? ""], "open (O)")}
               onclick={(e) => {
                 e.stopPropagation();
                 selected = idx;
-                openExternal(todo);
+                openLink(todo);
               }}
             >
-              ↗
+              <Lock />
             </button>
           {:else}
             <button
@@ -977,7 +1033,10 @@
                 {formatDue(todo.due_at)}
               </span>
             {/if}
-            {#if view === "open" && !isReadOnly(todo)}
+            {#if view === "open" && isReadOnly(todo)}
+              <!-- keeps the due date in line with the rows that have a pen -->
+              <span class="pen spacer" aria-hidden="true">✎</span>
+            {:else if view === "open"}
               <button
                 class="pen"
                 title={todo.due_at ? "Edit due date (D)" : "Add due date (D)"}
@@ -1034,18 +1093,21 @@
 
   <Toast bind:this={printToast}>To print, open the full-size view with <kbd>L</kbd></Toast>
   <Toast bind:this={readOnlyToast}>Read-only · from {readOnlySource}</Toast>
+  <Toast bind:this={refreshToast}>Refreshing data sources…</Toast>
 
   <footer>
     <span class="hints">
-      <span class="hint">
+      <!-- the same keys for every todo; on a read-only one those that don't
+           apply are dimmed, so the footer doesn't jump while moving -->
+      <span class="hint" class:off={selectedReadOnly}>
         <kbd>Enter</kbd>
-        {#if flat[selected] && isReadOnly(flat[selected])}open{:else}{view === "open" ? "done" : "restore"}{/if}
+        {view === "open" ? "done" : "restore"}
       </span>
       {#if view === "open"}
-        <span class="hint"><kbd>E</kbd> edit</span>
-        <span class="hint"><kbd>D</kbd> due date</span>
+        <span class="hint" class:off={selectedReadOnly}><kbd>E</kbd> edit</span>
+        <span class="hint" class:off={selectedReadOnly}><kbd>D</kbd> due date</span>
         <span class="hint"><kbd>C</kbd> category</span>
-        <span class="hint"><kbd>N</kbd> note</span>
+        <span class="hint" class:off={selectedReadOnly}><kbd>N</kbd> note</span>
       {:else}
         <span class="hint"><kbd>Del</kbd> remove</span>
       {/if}
@@ -1140,6 +1202,10 @@
   }
   .update.error {
     background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+  }
+  .warn {
+    color: var(--danger);
+    margin-right: 4px;
   }
   .update-text {
     min-width: 0;
@@ -1425,9 +1491,19 @@
   .check.ticked {
     color: var(--ok);
   }
-  /* mirrored from a data source: opens the item instead of ticking it */
+  /* mirrored from a data source: grayed out, with a lock instead of the
+     circle, which opens the item instead of ticking it */
+  .check.external {
+    opacity: 0.7;
+  }
   .check.external:hover {
-    color: var(--accent);
+    opacity: 1;
+  }
+  .todo.readonly .text {
+    color: var(--text-dim);
+  }
+  footer .hint.off {
+    opacity: 0.4;
   }
   .pen {
     background: none;
@@ -1445,6 +1521,9 @@
   .pen:hover {
     color: var(--accent);
     opacity: 1;
+  }
+  .todo .pen.spacer {
+    visibility: hidden;
   }
   .edit {
     background: var(--bg);

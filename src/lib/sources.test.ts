@@ -6,9 +6,9 @@ describe("parseSourceOutput", () => {
     const raw = JSON.stringify({
       items: [
         {
-          id: "ML-1",
-          text: " ML-1 Fix login ",
-          url: "https://jira.example.com/browse/ML-1",
+          id: "XY-1",
+          text: " XY-1 Fix login ",
+          url: "https://jira.example.com/browse/XY-1",
           due: "2026-11-10T15:00:00Z",
           notes: "details",
         },
@@ -17,9 +17,9 @@ describe("parseSourceOutput", () => {
     expect(parseSourceOutput(raw)).toEqual({
       items: [
         {
-          id: "ML-1",
-          text: "ML-1 Fix login",
-          url: "https://jira.example.com/browse/ML-1",
+          id: "XY-1",
+          text: "XY-1 Fix login",
+          url: "https://jira.example.com/browse/XY-1",
           dueAt: "2026-11-10T15:00:00.000Z",
           notes: "details",
         },
@@ -33,10 +33,14 @@ describe("parseSourceOutput", () => {
     expect(items).toEqual([{ id: "42", text: "repo#42 Title", url: null, dueAt: null, notes: null }]);
   });
 
-  it("reads a plain date as local midnight", () => {
+  it("reads a plain date as local noon, like a typed date without a time", () => {
     const { items } = parseSourceOutput('[{ "id": "a", "text": "x", "due": "2026-11-10" }]');
     // TZ=Europe/Berlin in vitest.config.ts
-    expect(items[0].dueAt).toBe("2026-11-09T23:00:00.000Z");
+    expect(items[0].dueAt).toBe("2026-11-10T11:00:00.000Z");
+  });
+
+  it("ignores a UTF-8 byte order mark", () => {
+    expect(parseSourceOutput('﻿{ "items": [] }').items).toEqual([]);
   });
 
   it("drops unusable optional fields instead of the item", () => {
