@@ -19,7 +19,7 @@ check. Tray menu → **Check for updates…** looks right away.
 | --- | --- |
 | `Ctrl+Alt+N` | Quick-add popup (global, remappable) |
 | `Ctrl+Alt+L` | Todo list popup above the tray/clock (global, remappable) |
-| `Enter` | Quick-add: save · List: tick selected todo (moves it to Done); on a `↗` todo from a [data source](#external-data-sources): open it in the browser |
+| `Enter` | Quick-add: save · List: tick selected todo (moves it to Done) |
 | `Tab` / `→` | Quick-add: accept the inline category suggestion |
 | `Ctrl+⌫` | Quick-add: clear the input |
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
@@ -27,10 +27,12 @@ check. Tray menu → **Check for updates…** looks right away.
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
 | `C` | Change the category of the selected open todo |
 | `Space` | Show/hide the notes of the selected todo |
+| `O` | Open the selected todo's link: a [data source](#external-data-sources) item in the browser, otherwise the first link in its notes |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `T` | Cycle the category filter (all → each category → no category) |
 | `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
+| `F5` | Refresh all [data sources](#external-data-sources) |
 | `Del` | Done view: delete permanently |
 | `L` | Toggle between the small popup and the full-size view |
 | `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
@@ -157,7 +159,7 @@ view and filters, and shows every todo with its full text and notes. `L` or
 `Esc` shrinks it back to the small popup; like the popup, it also hides when
 you click elsewhere.
 
-- Todos from a data source show `↗`; clicking it opens the item
+- Todos from a data source show a lock; clicking it opens the item
 - View only, as the pill at the top says: nothing here changes your todos.
   Go back to the small popup to edit. Pressing an edit key (`Enter`, `E`,
   `D`, `C`, `N`, `Del`) or clicking a todo's circle briefly shows
@@ -172,67 +174,24 @@ you click elsewhere.
 
 ### External data sources
 
-Purser can show items from other systems (Jira, GitHub, …) next to your own
-todos. Each **data source** is a command, usually a small script, that prints
-the items as JSON. Purser runs it at startup and then regularly, and mirrors
-the result:
+Purser can show items from other systems, such as Jira issues, as read-only
+todos with a gray lock. A data source is a command, configured in
+`sources.json` in the config folder, that prints the items as JSON. A Jira
+Cloud script ships with Purser. `O` opens an item in the browser, `C`
+changes its category, and `F5` refreshes all sources.
 
-- Items show up in the source's category with a `↗` instead of the circle
-- They are **read-only**: `Enter` (or clicking `↗`) opens the item in the
-  browser; edit keys only show "Read-only · from <source>". `Space` shows
-  their notes as usual
-- An item the source no longer returns (closed, reassigned) disappears
-- If a source fails (error, no JSON, more than 30 s), its last items stay and
-  a red line in the popup says why, until the next successful run
-- Import and duplicate detection ignore source items
-
-Tray menu → **Data sources** → **Open sources file…** opens (and on first use
-creates) `sources.json` next to the database. **Refresh now** re-reads the
-file and runs all sources at once, so edits apply without a restart.
-
-```json
-{
-  "sources": [
-    {
-      "id": "jira",
-      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:/scripts/jira.ps1",
-      "category": "jira",
-      "refreshMinutes": 15
-    }
-  ]
-}
-```
-
-- `id` (required): a short, unique name, shown in messages
-- `command` (required): run as in a terminal (`cmd /C` on Windows, `sh -c`
-  elsewhere), without a console window. `{scripts}` stands for the scripts
-  shipped with Purser; quote it, since it may contain spaces:
-  `powershell -NoProfile -ExecutionPolicy Bypass -File "{scripts}/example.ps1"`
-  prints two sample items
-- `category`: the category of the items (default: the `id`); must be a
-  valid `#tag` name
-- `refreshMinutes`: how often to run (default 15, at least 1)
-
-The command prints to stdout (UTF-8):
-
-```json
-{ "items": [
-  { "id": "ML-123", "text": "ML-123 Fix login", "url": "https://jira.example.com/browse/ML-123",
-    "due": "2026-11-10", "notes": "Description…" }
-] }
-```
-
-`id` (string or number, unique within the source) and `text` are required.
-`url` (http/https), `due` (ISO date-time, or a plain date meaning midnight)
-and `notes` are optional. Items without `id` or `text` are skipped. A
-non-zero exit code counts as a failure; its first line on stderr is shown.
-Credentials stay in the script, e.g. in an environment variable. Purser
-never stores them.
+Setup, the JSON output format and how to write your own source:
+[docs/data-sources.md](docs/data-sources.md).
 
 ## Data
 
 SQLite database in the app data directory
 (`%APPDATA%\com.sschaefer.purser\purser.db` on Windows).
+
+New versions may extend the database (data sources added a table and three
+columns). An older version fails to open a database that a newer one has
+extended, so going back to an older version needs a copy of `purser.db` from
+before the update.
 
 ## Autostart
 
