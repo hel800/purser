@@ -67,7 +67,7 @@
         "url": "help.html",
         "title": "Keyboard shortcuts",
         "width": 380,
-        "height": 624,
+        "height": 668,
         "center": true,
         "visible": false,
         "decorations": false,
@@ -93,6 +93,9 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": ["nsis"],
+    "resources": {
+      "resources/sources/": "sources/"
+    },
     "windows": {
       "nsis": {
         "customLanguageFiles": {

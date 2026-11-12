@@ -13,6 +13,7 @@ import {
   parseDueEntry,
   parseTodo,
   splitNote,
+  todoLink,
 } from "./parse";
 
 /** Sun 11 Oct 2026 13:02:05, Europe/Berlin (TZ is pinned in vitest.config.ts). */
@@ -281,5 +282,22 @@ describe("issue #43 table, both languages", () => {
     expect(parsed).toMatchObject({ dueAt, duePast });
     expect(parsed.text).toBe(input.split(" ")[0]);
     expect(formatDue(parsed.dueAt)).toMatch(shown);
+  });
+});
+
+describe("todoLink", () => {
+  it("prefers a data source item's url", () => {
+    expect(todoLink({ url: "https://jira/XY-1", notes: "see https://other" })).toBe("https://jira/XY-1");
+  });
+
+  it("falls back to the first link in the notes", () => {
+    expect(todoLink({ url: null, notes: "docs: https://a.example/x and https://b.example" })).toBe(
+      "https://a.example/x"
+    );
+  });
+
+  it("is null without any link", () => {
+    expect(todoLink({ url: null, notes: "no link here" })).toBeNull();
+    expect(todoLink({ url: null, notes: null })).toBeNull();
   });
 });

@@ -27,6 +27,9 @@ function todo(id: number, patch: Partial<Todo> = {}): Todo {
     due_at: null,
     created_at: "2026-10-01T08:00:00.000Z",
     done_at: null,
+    source_id: null,
+    external_id: null,
+    url: null,
     ...patch,
   };
 }

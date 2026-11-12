@@ -12,6 +12,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod sources;
 #[cfg(test)]
 mod tests;
 
@@ -1250,6 +1251,30 @@ pub fn run() {
             sql: "ALTER TABLE todos ADD COLUMN notes TEXT;",
             kind: MigrationKind::Up,
         },
+        // Todos mirrored from an external data source: `source_id` names the
+        // source (NULL for the user's own todos, which stay the only editable
+        // ones), `external_id` the item there, `url` where to open it.
+        Migration {
+            version: 3,
+            description: "add external source columns to todos",
+            sql: "ALTER TABLE todos ADD COLUMN source_id TEXT;
+                  ALTER TABLE todos ADD COLUMN external_id TEXT;
+                  ALTER TABLE todos ADD COLUMN url TEXT;
+                  CREATE UNIQUE INDEX IF NOT EXISTS todos_source_item
+                    ON todos (source_id, external_id);",
+            kind: MigrationKind::Up,
+        },
+        // when each data source last synced successfully; a source without
+        // a row has never synced, which the popup confirms once
+        Migration {
+            version: 4,
+            description: "track data source syncs",
+            sql: "CREATE TABLE IF NOT EXISTS source_syncs (
+                    source_id TEXT PRIMARY KEY,
+                    synced_at TEXT NOT NULL
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1290,9 +1315,12 @@ pub fn run() {
             import_finished,
             check_update,
             install_update,
-            show_app_menu
+            show_app_menu,
+            sources::list_sources,
+            sources::run_source
         ])
         .setup(|app| {
+            sources::ensure_sources_file(app.handle());
             let (settings, first_run) = load_settings(app.handle());
             if first_run {
                 // opt in to autostart once; afterwards the tray setting rules

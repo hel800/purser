@@ -179,6 +179,13 @@ export function linkify(text: string): { link: boolean; value: string }[] {
     .map((part) => ({ link: /^https?:\/\//.test(part), value: part }));
 }
 
+/** The link `O` opens: a data source item's own url, otherwise the first
+ *  link in the notes, so the key works the same on every todo. */
+export function todoLink(todo: { url: string | null; notes: string | null }): string | null {
+  if (todo.url) return todo.url;
+  return linkify(todo.notes ?? "").find((part) => part.link)?.value ?? null;
+}
+
 function sameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()

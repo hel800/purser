@@ -4,7 +4,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
-  import { openTodos, doneTodos, type Todo } from "./lib/db";
+  import { openTodos, doneTodos, isReadOnly, sourceSyncTimes, type Todo } from "./lib/db";
+  import { lockTooltip } from "./lib/sources";
   import { formatDue, dueStatus, linkify } from "./lib/parse";
   import {
     DUE_LABELS,
@@ -23,6 +24,7 @@
   import FilterBar from "./lib/FilterBar.svelte";
   import Logo from "./lib/Logo.svelte";
   import Toast from "./lib/Toast.svelte";
+  import Lock from "./lib/Lock.svelte";
   import wordmark from "./assets/purser-wordmark.png";
 
   // The full-size view is the popup's list blown up to the whole screen, and
@@ -41,6 +43,8 @@
   let listEl = $state<HTMLElement>();
   let printedAt = $state(new Date());
   let viewOnlyToast = $state<Toast>();
+  // last successful sync per data source, for the lock tooltips
+  let syncTimes: Record<string, string> = $state({});
 
   // filters narrow the Open view only; Done always shows everything (as in the popup)
   let groups: Group[] = $derived.by(() => {
@@ -76,10 +80,11 @@
   async function load(v: View) {
     wanted = v;
     const seq = ++loadSeq;
-    const data = v === "open" ? await openTodos() : await doneTodos();
+    const [data, times] = await Promise.all([v === "open" ? openTodos() : doneTodos(), sourceSyncTimes()]);
     if (seq !== loadSeq) return; // a newer load superseded this one
     view = v;
     todos = data;
+    syncTimes = times;
     dropStaleCategory();
   }
 
@@ -330,10 +335,22 @@
             {@const status = view === "open" ? dueStatus(todo.due_at) : null}
             <div class="todo">
               <div class="row">
-                <button class="check" tabindex="-1" title="View only — press L to edit" onclick={flashViewOnly}>
-                  {view === "done" ? "✓" : "○"}
-                </button>
-                <span class="text">{todo.text}</span>
+                {#if isReadOnly(todo)}
+                  <!-- mirrored from a data source: a lock instead of a checkbox -->
+                  <button
+                    class="check external"
+                    tabindex="-1"
+                    title={lockTooltip(todo, syncTimes[todo.source_id ?? ""], "click to open")}
+                    onclick={() => todo.url && openUrl(todo.url)}
+                  >
+                    <Lock />
+                  </button>
+                {:else}
+                  <button class="check" tabindex="-1" title="View only — press L to edit" onclick={flashViewOnly}>
+                    {view === "done" ? "✓" : "○"}
+                  </button>
+                {/if}
+                <span class="text" class:readonly={isReadOnly(todo)}>{todo.text}</span>
                 {#if todo.due_at}
                   <span class="due" class:overdue={status === "overdue"} class:soon={status === "soon"}>
                     {formatDue(todo.due_at)}
@@ -628,5 +645,12 @@
       font-size: 8pt;
       color: #555;
     }
+  }
+  /* mirrored from a data source: grayed out, as in the popup */
+  .check.external {
+    opacity: 0.7;
+  }
+  .text.readonly {
+    color: var(--text-dim);
   }
 </style>

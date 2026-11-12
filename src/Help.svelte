@@ -202,6 +202,8 @@
       <div class="row"><span class="keys"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>J</kbd> <kbd>K</kbd></span><span class="label">Navigate</span></div>
       <div class="row"><span class="keys"><kbd>Enter</kbd></span><span class="label">Mark selected as done</span></div>
       <div class="row"><span class="keys"><kbd>Tab</kbd></span><span class="label">Switch between Open and Done</span></div>
+      <div class="row"><span class="keys"><kbd>O</kbd></span><span class="label">Open link (source item, or first link in notes)</span></div>
+      <div class="row"><span class="keys"><kbd>F5</kbd></span><span class="label">Refresh data sources</span></div>
       <div class="row"><span class="keys"><kbd>E</kbd> or <kbd>F2</kbd></span><span class="label">Edit text</span></div>
       <div class="row"><span class="keys"><kbd>D</kbd></span><span class="label">Edit due date (empty removes it)</span></div>
       <div class="row"><span class="keys"><kbd>C</kbd></span><span class="label">Change category</span></div>
