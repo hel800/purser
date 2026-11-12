@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { removeOtherSources, syncSourceItems, type SourceItem } from "./db";
-import { isValidCategoryName } from "./parse";
+import { isDayOnly, isValidCategoryName } from "./parse";
 import { settings } from "./settings.svelte";
 
 /** A configured data source, as `list_sources` returns it (defaults filled in). */
@@ -74,16 +74,22 @@ function linkField(value: unknown): string | null {
   return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
-/** An ISO date-time, or a plain date (Jira's due dates), read as local noon:
- *  the time a due date typed without a time gets ("friday"), so both show and
- *  turn "soon"/"overdue" the same way. Anything else means no due date. */
+/** An ISO date-time, or a plain date (Jira's due dates), kept as that day
+ *  alone: stored like a due date typed without a time (see `isDayOnly`).
+ *  Anything else means no due date. */
 function dueField(value: unknown): string | null {
   const text = textField(value);
   if (!text) return null;
-  const dateOnly = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateOnly) return new Date(+dateOnly[1], +dateOnly[2] - 1, +dateOnly[3], 12).toISOString();
+  if (isDayOnly(text)) return isRealDay(text) ? text : null;
   const time = Date.parse(text);
   return Number.isNaN(time) ? null : new Date(time).toISOString();
+}
+
+/** "2026-02-30" has the shape of a day but isn't one. */
+function isRealDay(day: string): boolean {
+  const [y, m, d] = day.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
 }
 
 /** Runs one source and mirrors its items. Throws with a short message on failure. */

@@ -33,10 +33,10 @@ describe("parseSourceOutput", () => {
     expect(items).toEqual([{ id: "42", text: "repo#42 Title", url: null, dueAt: null, notes: null }]);
   });
 
-  it("reads a plain date as local noon, like a typed date without a time", () => {
+  it("keeps a plain date as the day alone, like a typed date without a time", () => {
     const { items } = parseSourceOutput('[{ "id": "a", "text": "x", "due": "2026-11-10" }]');
-    // TZ=Europe/Berlin in vitest.config.ts
-    expect(items[0].dueAt).toBe("2026-11-10T11:00:00.000Z");
+    expect(items[0].dueAt).toBe("2026-11-10");
+    expect(parseSourceOutput('[{ "id": "a", "text": "x", "due": "2026-02-30" }]').items[0].dueAt).toBeNull();
   });
 
   it("ignores a UTF-8 byte order mark", () => {
