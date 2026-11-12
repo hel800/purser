@@ -78,13 +78,29 @@ describe("parseTodo", () => {
     expect(parseTodo("call bob friday").duePast).toBe(false);
   });
 
-  it("rolls dates without a year forward", () => {
-    expect(parseTodo("x 10 Oct").dueAt).toBe(local(2027, 10, 10, 12));
-    expect(parseTodo("x jan 1").dueAt).toBe(local(2027, 1, 1, 12));
+  it("keeps a date without a year that just passed in the past, rolls older ones forward", () => {
+    expect(parseTodo("sdfj 10 Oct")).toMatchObject({ text: "sdfj", dueAt: "2026-10-10", duePast: true });
+    expect(parseTodo("x jan 1").dueAt).toBe("2027-01-01");
+    expect(parseTodo("x 1 Sep").dueAt).toBe("2027-09-01");
   });
 
-  it("reads dotted dates in US order (pins current behaviour, see #43)", () => {
-    expect(parseTodo("x 11.10.2026").dueAt).toBe(local(2026, 11, 10, 12));
+  it("reads dotted dates in the date language's order", () => {
+    expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-11-10");
+    settings.dateLanguage = "de";
+    expect(parseTodo("x 11.10.2026").dueAt).toBe("2026-10-11");
+    expect(parseTodo("x 1.2.2026").dueAt).toBe("2026-02-01");
+  });
+
+  it("stores a date without a time as the day alone", () => {
+    expect(parseTodo("x friday").dueAt).toBe("2026-10-16");
+    expect(parseTodo("x today").dueAt).toBe("2026-10-11");
+    expect(parseTodo("x in 2 weeks").dueAt).toBe("2026-10-25");
+    expect(parseTodo("x friday 5pm").dueAt).toBe(local(2026, 10, 16, 17));
+    expect(parseTodo("x in 2 hours").dueAt).toBe(local(2026, 10, 11, 15, 2, 5));
+  });
+
+  it("never puts last friday in the future", () => {
+    expect(parseTodo("x last friday")).toMatchObject({ dueAt: "2026-10-09", duePast: true });
   });
 });
 
@@ -135,20 +151,38 @@ describe("formatDue", () => {
     expect(formatDue(null)).toBe("");
   });
 
-  it("omits the time at midnight and the year for this year", () => {
-    const s = formatDue(local(2026, 10, 16));
+  it("shows a day without a time, and the year only for other years", () => {
+    const s = formatDue("2026-10-16");
     expect(s).not.toMatch(/\d:\d\d/);
     expect(s).not.toContain("2026");
+    expect(formatDue("2027-01-01")).toContain("2027");
   });
 
-  it("shows the year for other years", () => {
-    expect(formatDue(local(2027, 1, 1))).toContain("2027");
+  it("omits the time of an instant at midnight (older imported days)", () => {
+    expect(formatDue(local(2026, 10, 16))).not.toMatch(/\d:\d\d/);
+  });
+
+  it("shows the date in the date input language", () => {
+    expect(formatDue("2026-10-16")).toMatch(/^Fri,? 16 Oct$/);
+    settings.dateLanguage = "de";
+    expect(formatDue("2026-10-16")).toMatch(/^Fr\., 16\. Okt\.$/);
   });
 
   it("follows the hour24 setting", () => {
     expect(formatDue(local(2026, 10, 16, 17))).toMatch(/17:00$/);
     settings.hour24 = false;
-    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\s?pm$/i);
+    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\sp\.m\.$/);
+    expect(formatDue(local(2026, 10, 16, 9, 30))).toMatch(/9:30\sa\.m\.$/);
+    settings.dateLanguage = "de";
+    expect(formatDue(local(2026, 10, 16, 17))).toMatch(/5:00\sp\.m\.$/);
+  });
+
+  it.each(["5am", "5AM", "5a.m.", "5A.M.", "5 a.m."])("reads friday %s", (time) => {
+    expect(parseTodo(`x friday ${time}`)).toMatchObject({ text: "x", dueAt: local(2026, 10, 16, 5) });
+  });
+
+  it.each(["5pm", "5PM", "5p.m.", "5P.M.", "5 p.m."])("reads friday %s", (time) => {
+    expect(parseTodo(`x friday ${time}`)).toMatchObject({ text: "x", dueAt: local(2026, 10, 16, 17) });
   });
 });
 
@@ -193,12 +227,24 @@ describe("dueStatus (now is Sunday 13:02)", () => {
     expect(dueStatus(local(2026, 10, 17, 9))).toBeNull(); // Saturday
     expect(dueStatus(local(2026, 10, 19, 9))).toBe("soon"); // Monday
   });
+
+  it("makes a day without a time overdue only once it has ended", () => {
+    expect(dueStatus("2026-10-11")).toBe("soon"); // today, although past noon
+    expect(dueStatus("2026-10-10")).toBe("overdue");
+    expect(dueStatus("2026-10-12")).toBeNull(); // next working day, but no time before noon
+    freezeAt(new Date(2026, 9, 11, 23, 59, 59));
+    expect(dueStatus("2026-10-11")).toBe("soon");
+    freezeAt(new Date(2026, 9, 12, 0, 0, 1));
+    expect(dueStatus("2026-10-11")).toBe("overdue");
+  });
 });
 
 describe("isToday / isThisWeek (Mon 5 Oct – Sun 11 Oct)", () => {
   it("compares calendar days in local time", () => {
     expect(isToday(local(2026, 10, 11, 0, 0, 1))).toBe(true);
     expect(isToday(local(2026, 10, 12))).toBe(false);
+    expect(isToday("2026-10-11")).toBe(true);
+    expect(isToday("2026-10-12")).toBe(false);
   });
 
   it("starts the week on Monday", () => {
@@ -206,6 +252,36 @@ describe("isToday / isThisWeek (Mon 5 Oct – Sun 11 Oct)", () => {
     expect(isThisWeek(local(2026, 10, 4, 23, 59))).toBe(false);
     expect(isThisWeek(local(2026, 10, 11, 23, 59))).toBe(true);
     expect(isThisWeek(local(2026, 10, 12))).toBe(false);
+    expect(isThisWeek("2026-10-05")).toBe(true);
+    expect(isThisWeek("2026-10-11")).toBe(true);
+    expect(isThisWeek("2026-10-12")).toBe(false);
+  });
+});
+
+// The table of #43, entered on Sun 11 Oct 2026 13:02 (NOW), in both date
+// languages: what is stored, whether the preview warns, and how it is shown.
+describe("issue #43 table, both languages", () => {
+  it.each([
+    ["sdfj 10 Oct", "en", "2026-10-10", true, /^Sat,? 10 Oct$/],
+    ["x 11.10.2026", "en", "2026-11-10", false, /^Tue,? 10 Nov$/],
+    ["x 1.2.2026", "en", "2026-01-02", true, /^Fri,? 2 Jan$/],
+    ["x friday", "en", "2026-10-16", false, /^Fri,? 16 Oct$/],
+    ["x 15 dec", "en", "2026-12-15", false, /^Tue,? 15 Dec$/],
+    ["x 23.12.2026", "en", "2026-12-23", false, /^Wed,? 23 Dec$/],
+    ["x last friday", "en", "2026-10-09", true, /^Fri,? 9 Oct$/],
+    ["sdfj 10. Oktober", "de", "2026-10-10", true, /^Sa\., 10\. Okt\.$/],
+    ["x 11.10.2026", "de", "2026-10-11", false, /^So\., 11\. Okt\.$/],
+    ["x 1.2.2026", "de", "2026-02-01", true, /^So\., 1\. Feb\.$/],
+    ["x Freitag", "de", "2026-10-16", false, /^Fr\., 16\. Okt\.$/],
+    ["x 15. Dezember", "de", "2026-12-15", false, /^Di\., 15\. Dez\.$/],
+    ["x 23.12.2026", "de", "2026-12-23", false, /^Mi\., 23\. Dez\.$/],
+    ["x letzten Freitag", "de", "2026-10-09", true, /^Fr\., 9\. Okt\.$/],
+  ] as const)("%s (%s) -> %s", (input, language, dueAt, duePast, shown) => {
+    settings.dateLanguage = language;
+    const parsed = parseTodo(input);
+    expect(parsed).toMatchObject({ dueAt, duePast });
+    expect(parsed.text).toBe(input.split(" ")[0]);
+    expect(formatDue(parsed.dueAt)).toMatch(shown);
   });
 });
 

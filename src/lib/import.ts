@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { addTodos, existingTodoKeys, todoKey } from "./db";
-import { TAG_CHARS, isValidCategoryName, parseDueDate, parseTodo, splitNote, type ParsedTodo } from "./parse";
+import {
+  TAG_CHARS,
+  isValidCategoryName,
+  localDay,
+  parseDueDate,
+  parseTodo,
+  splitNote,
+  type ParsedTodo,
+} from "./parse";
 
 /** Payload of the backend's `purser://import` event. */
 export interface ImportRequest {
@@ -161,7 +169,9 @@ function parseJiraDate(value: string): string | null {
   }
   const monthIndex = MONTHS[month.toLowerCase()];
   if (monthIndex === undefined) return parseDueDate(value);
-  return new Date(year, monthIndex, day, hour, minute).toISOString();
+  const date = new Date(year, monthIndex, day, hour, minute);
+  // a Jira due date is a day, which its exports write as 00:00
+  return hour === 0 && minute === 0 ? localDay(date) : date.toISOString();
 }
 
 const JIRA_DONE = new Set([
