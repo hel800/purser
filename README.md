@@ -201,7 +201,7 @@ npm run coverage       # the same, with the coverage report and the 90% gate
 npm run tauri build    # produce NSIS installer (Windows)
 ```
 
-Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 22).
+Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 24; the tests need `node:sqlite`).
 
 Main only takes pull requests, and every pull request must pass the `CI`
 workflow before it can be merged. It runs on Windows and Linux:
