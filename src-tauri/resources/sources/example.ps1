@@ -9,8 +9,8 @@ $items = @(
     @{
         id    = "EX-1"
         text  = "EX-1 Review the Purser data source docs"
-        url   = "https://github.com/hel800/purser#external-data-sources"
-        notes = "Shown read-only. Enter opens the link."
+        url   = "https://github.com/hel800/purser/blob/main/docs/data-sources.md"
+        notes = "Shown read-only. O opens the link."
     },
     @{
         id   = "EX-2"
