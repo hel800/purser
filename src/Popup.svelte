@@ -9,6 +9,7 @@
   import {
     filterTodos,
     groupByCategory,
+    matchCategories,
     nextCategory,
     nextDue,
     type CategoryFilter,
@@ -114,18 +115,19 @@
     key: string;
   }
 
-  // the pick list below the "new category" input: every category, then a
-  // "No category" row to remove the assignment
+  // the pick list below the category input, live-filtered by what is typed;
+  // the "No category" row (removes the assignment) only shows while the input
+  // is empty, since it can't match a typed name
   let catMenuItems = $derived.by(() => {
     const items: CatMenuItem[] = [];
-    for (const c of allCategories) {
+    for (const c of matchCategories(allCategories, catMenuValue)) {
       items.push({ kind: "cat", name: c.name, color: c.color, key: `c${c.id}` });
     }
-    items.push({ kind: "none", key: "none" });
+    if (!catMenuValue.trim()) items.push({ kind: "none", key: "none" });
     return items;
   });
 
-  // a new-category name needs text and must round-trip through #tag syntax
+  // a typed name (new or existing) needs text and must round-trip through #tag syntax
   let catMenuCreateValid = $derived.by(() => {
     const v = catMenuValue.trim();
     return v.length > 0 && isValidCategoryName(v);
@@ -488,12 +490,12 @@
   function catMenuMove(dir: 1 | -1) {
     catMenuActive = Math.min(Math.max(catMenuActive + dir, 0), catMenuItems.length);
     // keyboard navigation moves focus so typing lands in the list (j/k nav)
-    // instead of the "new category" input
+    // instead of the category input
     if (catMenuActive === 0) catMenuInput?.focus();
     else catMenuRows[catMenuActive - 1]?.focus();
   }
 
-  // typing or focusing the "new category" input claims the selection, so a
+  // typing or focusing the category input claims the selection, so a
   // row the mouse happened to hover can't hijack Enter (issue #22)
   function catMenuInputActive() {
     catMenuActive = 0;
@@ -501,7 +503,8 @@
 
   async function catMenuChoose(activeIndex: number) {
     if (!catMenu) return;
-    // row 0 is the "new category" input — Enter creates it (empty names ignored)
+    // row 0 is the category input — Enter assigns the typed name, creating the
+    // category if it doesn't exist yet (empty names ignored)
     if (activeIndex === 0) {
       catMenuActive = 0;
       catMenuInput?.focus();
@@ -1015,7 +1018,7 @@
               onscroll={syncCatMenuScroll}
               oninput={catMenuInputActive}
               onfocus={catMenuInputActive}
-              placeholder="New category…"
+              placeholder="Type a category…"
               spellcheck="false"
             />
             <!-- always shown: the input's text is transparent, so the overlay
@@ -1049,7 +1052,7 @@
           </li>
         {/each}
       </ul>
-      <div class="menu-hint">Type name · ↑↓ pick · Enter ok · Esc close</div>
+      <div class="menu-hint">Type to filter or create · ↑↓ pick · Enter ok · Esc close</div>
     </div>
   </div>
 {/if}

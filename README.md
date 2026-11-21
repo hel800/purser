@@ -25,7 +25,7 @@ check. Tray menu → **Check for updates…** looks right away.
 | `↑` / `↓` (or `j` / `k`) | Navigate the list |
 | `E` or `F2` | Edit the text of the selected open todo |
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
-| `C` | Change the category of the selected open todo |
+| `C` | Change the category of the selected open todo (type to filter the list; `Enter` assigns the typed name, creating it if new; `Tab` / `→` completes) |
 | `Space` | Show/hide the notes of the selected todo |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `T` | Cycle the category filter (all → each category → no category) |
