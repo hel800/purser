@@ -297,17 +297,18 @@ const nearestYearRefiner: Refiner = {
 };
 
 /**
- * German "10. Oktober 15 Uhr": day and month followed by a time. chrono
- * reads the "15" as a two-digit year (2015) and drops the "Uhr". Here the
- * number before "Uhr" is the hour and the year is the nearest one
- * (`inNearestYear`). A four-digit year ("10. Oktober 2027 15 Uhr") stays
- * chrono's, as the pattern allows no year between month and time.
+ * German "10. Oktober 15 Uhr": day and month followed by a time, with or
+ * without a comma after the month ("10. Oktober, 15 Uhr"). chrono reads the
+ * "15" as a two-digit year (2015) and drops the "Uhr". Here the number before
+ * "Uhr" is the hour and the year is the nearest one (`inNearestYear`). A
+ * four-digit year ("10. Oktober 2027 15 Uhr") stays chrono's, as the pattern
+ * allows no year between month and time.
  */
 const dayMonthHourParser: Parser = {
   pattern: () =>
     new RegExp(
-      // "10. Oktober", "10.Oktober" or "10 Oktober"
-      `(\\d{1,2})(?:\\.\\s*|\\s+)(${alternation(GERMAN_MONTHS)})\\.?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*Uhr${NOT_BEFORE_WORD}`,
+      // "10. Oktober", "10.Oktober", "10 Oktober" or "10. Oktober,"
+      `(\\d{1,2})(?:\\.\\s*|\\s+)(${alternation(GERMAN_MONTHS)})\\.?\\s*,?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*Uhr${NOT_BEFORE_WORD}`,
       "iu"
     ),
   extract: (context, match) => {
