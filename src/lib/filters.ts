@@ -1,4 +1,4 @@
-import type { Todo } from "./db";
+import type { Category, Todo } from "./db";
 import { dueStatus, isThisWeek, isToday } from "./parse";
 
 /** Category filter: a category id, `null` for all, `-1` for uncategorized. */
@@ -112,4 +112,22 @@ export interface ViewState {
   view: "open" | "done";
   catFilter: CategoryFilter;
   dueFilter: DueFilter;
+}
+
+/**
+ * Categories whose name contains `query` (case-insensitive), for the live
+ * filter of the change-category menu. Names starting with the query come
+ * first so the best completion sits on top; otherwise the order is kept.
+ */
+export function matchCategories(categories: Category[], query: string): Category[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return categories;
+  const prefixMatches: Category[] = [];
+  const innerMatches: Category[] = [];
+  for (const category of categories) {
+    const name = category.name.toLowerCase();
+    if (name.startsWith(needle)) prefixMatches.push(category);
+    else if (name.includes(needle)) innerMatches.push(category);
+  }
+  return [...prefixMatches, ...innerMatches];
 }

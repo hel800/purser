@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Todo } from "./db";
+import type { Category, Todo } from "./db";
 import {
   DUE_CYCLE,
   categoryCycle,
@@ -7,6 +7,7 @@ import {
   existingCategory,
   filterTodos,
   groupByCategory,
+  matchCategories,
   nextCategory,
   nextDue,
 } from "./filters";
@@ -103,5 +104,28 @@ describe("groupByCategory", () => {
     ]);
     expect(groups[0].color).toBe("#6ea8fe");
     expect(groupByCategory([])).toEqual([]);
+  });
+});
+
+describe("matchCategories", () => {
+  const cats: Category[] = [
+    { id: 1, name: "Homework", color: "#111111" },
+    { id: 2, name: "Work", color: "#222222" },
+    { id: 3, name: "Private", color: "#333333" },
+    { id: 4, name: "Workshop", color: "#444444" },
+  ];
+  const names = (list: Category[]) => list.map((c) => c.name);
+
+  it("returns every category for an empty or blank query", () => {
+    expect(names(matchCategories(cats, ""))).toEqual(["Homework", "Work", "Private", "Workshop"]);
+    expect(names(matchCategories(cats, "  "))).toEqual(["Homework", "Work", "Private", "Workshop"]);
+  });
+
+  it("matches case-insensitively, prefix matches first", () => {
+    expect(names(matchCategories(cats, "WOR"))).toEqual(["Work", "Workshop", "Homework"]);
+  });
+
+  it("returns nothing when no name contains the query", () => {
+    expect(matchCategories(cats, "xyz")).toEqual([]);
   });
 });
