@@ -114,6 +114,18 @@ describe("year-less dates (inNearestYear)", () => {
     expect(found("23.12. 2030", "de")).toBe("2026-12-23 20:30");
     expect(found("29.02. 2026", "de")).toBeNull();
   });
+
+  it("reads the number before 'Uhr' after a month name as the hour (issue #81)", () => {
+    const sunday = new Date(2026, 9, 11, 10, 0); // Sun 11 Oct 2026, as in the issue
+    expect(found("10. Oktober 15 Uhr", "de", sunday)).toBe("2026-10-10 15:00");
+    expect(findDate("Zahnarzt 10. Oktober 15 Uhr", "de", sunday)?.text).toBe("10. Oktober 15 Uhr");
+    expect(found("10. Okt 9:30 Uhr", "de", sunday)).toBe("2026-10-10 09:30");
+    expect(found("10.Oktober 15 Uhr", "de", sunday)).toBe("2026-10-10 15:00");
+    expect(found("10.Oktober", "de", sunday)).toBe("2026-10-10 12:00");
+    expect(found("10. Oktober 2027", "de", sunday)).toBe("2027-10-10 12:00");
+    expect(found("10. Oktober 2027 15 Uhr", "de", sunday)).toBe("2027-10-10 15:00");
+    expect(found("1. August 15 Uhr", "de", sunday)).toBe("2027-08-01 15:00");
+  });
 });
 
 describe("false positives", () => {
