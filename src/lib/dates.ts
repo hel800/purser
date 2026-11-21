@@ -306,7 +306,8 @@ const nearestYearRefiner: Refiner = {
 const dayMonthHourParser: Parser = {
   pattern: () =>
     new RegExp(
-      `(\\d{1,2})\\.?\\s+(${alternation(GERMAN_MONTHS)})\\.?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*Uhr${NOT_BEFORE_WORD}`,
+      // "10. Oktober", "10.Oktober" or "10 Oktober"
+      `(\\d{1,2})(?:\\.\\s*|\\s+)(${alternation(GERMAN_MONTHS)})\\.?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*Uhr${NOT_BEFORE_WORD}`,
       "iu"
     ),
   extract: (context, match) => {

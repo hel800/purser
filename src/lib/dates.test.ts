@@ -120,6 +120,8 @@ describe("year-less dates (inNearestYear)", () => {
     expect(found("10. Oktober 15 Uhr", "de", sunday)).toBe("2026-10-10 15:00");
     expect(findDate("Zahnarzt 10. Oktober 15 Uhr", "de", sunday)?.text).toBe("10. Oktober 15 Uhr");
     expect(found("10. Okt 9:30 Uhr", "de", sunday)).toBe("2026-10-10 09:30");
+    expect(found("10.Oktober 15 Uhr", "de", sunday)).toBe("2026-10-10 15:00");
+    expect(found("10.Oktober", "de", sunday)).toBe("2026-10-10 12:00");
     expect(found("10. Oktober 2027", "de", sunday)).toBe("2027-10-10 12:00");
     expect(found("10. Oktober 2027 15 Uhr", "de", sunday)).toBe("2027-10-10 15:00");
     expect(found("1. August 15 Uhr", "de", sunday)).toBe("2027-08-01 15:00");
