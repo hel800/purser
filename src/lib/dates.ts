@@ -296,6 +296,30 @@ const nearestYearRefiner: Refiner = {
   },
 };
 
+/**
+ * German "10. Oktober 15 Uhr": day and month followed by a time. chrono
+ * reads the "15" as a two-digit year (2015) and drops the "Uhr". Here the
+ * number before "Uhr" is the hour and the year is the nearest one
+ * (`inNearestYear`). A four-digit year ("10. Oktober 2027 15 Uhr") stays
+ * chrono's, as the pattern allows no year between month and time.
+ */
+const dayMonthHourParser: Parser = {
+  pattern: () =>
+    new RegExp(
+      `(\\d{1,2})\\.?\\s+(${alternation(GERMAN_MONTHS)})\\.?\\s+(\\d{1,2})(?::(\\d{2}))?\\s*Uhr${NOT_BEFORE_WORD}`,
+      "iu"
+    ),
+  extract: (context, match) => {
+    const day = Number(match[1]);
+    const month = GERMAN_MONTHS[match[2].toLowerCase()];
+    const hour = Number(match[3]);
+    const minute = match[4] ? Number(match[4]) : 0;
+    if (hour > 23 || minute > 59) return null;
+    const date = inNearestYear(context.refDate, (year) => validDate(year, month, day));
+    return date ? { ...date, hour, minute } : null;
+  },
+};
+
 /** Monday of ISO calendar week 1 — the week that contains 4 January. */
 function mondayOfWeekOne(year: number): Date {
   const jan4 = new Date(year, 0, 4);
@@ -422,6 +446,7 @@ function buildGerman(): chrono.Chrono {
     ...[
       compactIsoParser,
       dayMonthParser,
+      dayMonthHourParser,
       calendarWeekParser,
       monthPartParser({ anfang: "start", mitte: "middle", ende: "end" }, GERMAN_MONTHS),
       comingWeekdayParser("kommende[nrs]?", GERMAN_WEEKDAYS),
