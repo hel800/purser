@@ -42,8 +42,25 @@ jobs:
       - name: vite build
         run: npm run build
 
-      - name: vitest
-        run: npm test
+      # fails below the thresholds in vitest.config.ts
+      - name: vitest (coverage)
+        run: npm run coverage
+
+      - name: coverage summary
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        run: |
+          node -e '
+            const { total } = require("./coverage/coverage-summary.json");
+            const rows = ["lines", "statements", "functions", "branches"]
+              .map((m) => `| ${m} | ${total[m].pct}% | ${total[m].covered}/${total[m].total} |`);
+            console.log(["### Frontend coverage", "", "| Metric | % | Covered |", "|---|---|---|", ...rows].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        with:
+          name: coverage
+          path: coverage/
 
   rust:
     name: rust (${{ matrix.name }})

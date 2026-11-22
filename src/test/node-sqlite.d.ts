@@ -1,22 +1,17 @@
-// Minimal types for Node's built-in SQLite (Node 22.5+), used by the database
-// tests. `@types/node` is not a dependency of this project.
-
+// The part of Node's built-in node:sqlite the SQL mock uses; the project
+// has no @types/node (the app code runs in a webview, not in Node).
 declare module "node:sqlite" {
-  export interface StatementResult {
-    changes: number;
-    lastInsertRowid: number | bigint;
-  }
+  type SqlValue = null | number | bigint | string | Uint8Array;
 
-  export interface Statement {
-    run(...params: unknown[]): StatementResult;
-    all(...params: unknown[]): Record<string, unknown>[];
-    get(...params: unknown[]): Record<string, unknown> | undefined;
+  export class StatementSync {
+    run(...values: SqlValue[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+    all(...values: SqlValue[]): Record<string, SqlValue>[];
   }
 
   export class DatabaseSync {
-    constructor(path: string, options?: { readOnly?: boolean });
+    constructor(path: string);
     exec(sql: string): void;
-    prepare(sql: string): Statement;
+    prepare(sql: string): StatementSync;
     close(): void;
   }
 }
