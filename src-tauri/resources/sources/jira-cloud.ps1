@@ -42,6 +42,8 @@ function Fail([string]$message) {
 # collect its text, one line per paragraph, heading or list item.
 function ConvertFrom-Adf($node) {
     if ($null -eq $node) { return "" }
+    # Jira Server returns a plain string where Cloud returns an ADF tree
+    if ($node -is [string]) { return $node }
     switch ($node.type) {
         "text" { return $node.text }
         "hardBreak" { return "`n" }
