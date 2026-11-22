@@ -235,7 +235,8 @@ npm test               # vitest: unit tests for the parsers (src/lib/*.test.ts)
 npm run tauri build    # produce NSIS installer (Windows)
 ```
 
-Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 22).
+Requires Rust (MSVC toolchain on Windows) and Node (CI uses Node 24; the
+database tests need `node:sqlite`).
 
 Main only takes pull requests, and every pull request must pass the `CI`
 workflow before it can be merged. It runs on Windows and Linux:
