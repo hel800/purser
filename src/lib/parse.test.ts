@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { freezeAt } from "../test/clock";
 import { findDate } from "./dates";
 import { settings } from "./settings.svelte";
 import {
@@ -22,17 +23,11 @@ const NOW = new Date(2026, 9, 11, 13, 2, 5);
 const local = (y: number, m: number, d: number, h = 0, mi = 0, s = 0) =>
   new Date(y, m - 1, d, h, mi, s).toISOString();
 
-function freezeAt(date: Date) {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(date);
-}
-
 beforeEach(() => {
   freezeAt(NOW);
   // "auto" would follow the machine's language; these cases are English
   settings.dateLanguage = "en";
 });
-afterEach(() => vi.useRealTimers());
 
 describe("test environment", () => {
   it("runs in Europe/Berlin with the clock frozen", () => {

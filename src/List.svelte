@@ -20,6 +20,7 @@
     type ViewState,
   } from "./lib/filters";
   import { initSettings } from "./lib/settings.svelte";
+  import { isPrintKey, listKeyAction } from "./lib/keys";
   import FilterBar from "./lib/FilterBar.svelte";
   import Logo from "./lib/Logo.svelte";
   import Toast from "./lib/Toast.svelte";
@@ -176,8 +177,7 @@
   });
 
   async function onKeydown(e: KeyboardEvent) {
-    // bound explicitly: the webview's own Ctrl+P is not reliable everywhere
-    if (e.ctrlKey && e.key.toLowerCase() === "p") {
+    if (isPrintKey(e)) {
       e.preventDefault();
       print();
       return;
@@ -189,76 +189,45 @@
       filterMenu = null;
       if (e.key === "Escape") return;
     }
+    const { action, preventDefault } = listKeyAction(e.key, e.shiftKey, view);
+    if (preventDefault) e.preventDefault();
     const page = (listEl?.clientHeight ?? 400) - ROW_SCROLL;
-    switch (e.key) {
-      case "Escape":
-      case "l":
-        e.preventDefault();
+    switch (action) {
+      case "back":
         backToPopup();
         break;
-      case "ArrowDown":
-      case "j":
-        e.preventDefault();
+      case "rowDown":
         scrollList(ROW_SCROLL);
         break;
-      case "ArrowUp":
-      case "k":
-        e.preventDefault();
+      case "rowUp":
         scrollList(-ROW_SCROLL);
         break;
-      case "PageDown":
-        e.preventDefault();
+      case "pageDown":
         scrollList(page);
         break;
-      case "PageUp":
-        e.preventDefault();
+      case "pageUp":
         scrollList(-page);
         break;
-      case " ":
-        // also blocks a focused button from being space-activated
-        e.preventDefault();
-        scrollList(e.shiftKey ? -page : page);
-        break;
-      case "Home":
-        e.preventDefault();
+      case "top":
         listEl?.scrollTo({ top: 0 });
         break;
-      case "End":
-        e.preventDefault();
+      case "bottom":
         listEl?.scrollTo({ top: listEl.scrollHeight });
         break;
-      case "Tab":
-        e.preventDefault();
+      case "switchView":
         // toggle from the view being loaded, so two quick Tabs cancel out
         await switchView(wanted === "open" ? "done" : "open");
         break;
-      case "t":
-        if (view === "open") {
-          e.preventDefault();
-          catFilter = nextCategory(todos, catFilter);
-        }
+      case "cycleCategory":
+        catFilter = nextCategory(todos, catFilter);
         break;
-      case "f":
-        if (view === "open") {
-          e.preventDefault();
-          dueFilter = nextDue(dueFilter);
-        }
+      case "cycleDue":
+        dueFilter = nextDue(dueFilter);
         break;
-      // the popup's edit keys: say why nothing happens instead of ignoring them
-      case "Enter":
-      case "e":
-      case "F2":
-      case "d":
-      case "c":
-      case "n":
-      case "Delete":
-        // also keeps a previously clicked button from being re-clicked by Enter
-        e.preventDefault();
+      case "viewOnly":
         flashViewOnly();
         break;
-      case "?":
-      case "F1":
-        e.preventDefault();
+      case "help":
         openHelp();
         break;
     }
