@@ -7,14 +7,15 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 /// A source that hangs (waiting for a password prompt, a dead VPN) is
-/// killed after this long; its last good items stay.
+/// stopped after this long, together with anything it started; its last good
+/// items stay.
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Output beyond this is cut off, which then fails as invalid JSON. A few
@@ -22,6 +23,12 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_OUTPUT_BYTES: u64 = 5 * 1024 * 1024;
 
 pub const DEFAULT_REFRESH_MINUTES: u32 = 15;
+
+/// What `refreshMinutes` may be: a typo like `150000` would otherwise become an
+/// interval above `setInterval`'s 32-bit limit, which fires immediately and
+/// runs the command in a loop.
+const MIN_REFRESH_MINUTES: u32 = 1;
+const MAX_REFRESH_MINUTES: u32 = 7 * 24 * 60; // a week
 
 /// Written on first start. JSON has no comments, so the pointer to the docs
 /// goes into an ignored field.
@@ -109,7 +116,7 @@ pub fn parse_sources(raw: &str) -> Result<Vec<SourceDto>, String> {
         let refresh_minutes = config
             .refresh_minutes
             .unwrap_or(DEFAULT_REFRESH_MINUTES)
-            .max(1);
+            .clamp(MIN_REFRESH_MINUTES, MAX_REFRESH_MINUTES);
         sources.push(SourceDto {
             id,
             category,
@@ -142,6 +149,10 @@ pub fn expand_command(command: &str, scripts: Option<&Path>) -> String {
 /// Runs `command` through the shell, so users can write it exactly as they
 /// would in a terminal, and returns its stdout.
 fn run_command(command: &str) -> Result<String, String> {
+    run_command_with_timeout(command, RUN_TIMEOUT)
+}
+
+fn run_command_with_timeout(command: &str, timeout: Duration) -> Result<String, String> {
     let mut child = shell(command)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -161,10 +172,9 @@ fn run_command(command: &str) -> Result<String, String> {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             break status;
         }
-        if started.elapsed() > RUN_TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("timed out after {} s", RUN_TIMEOUT.as_secs()));
+        if started.elapsed() > timeout {
+            stop(&mut child);
+            return Err(format!("timed out after {} s", timeout.as_secs()));
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -182,6 +192,28 @@ fn read_limited(pipe: impl Read) -> String {
     let mut bytes = Vec::new();
     let _ = pipe.take(MAX_OUTPUT_BYTES).read_to_end(&mut bytes);
     String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// Ends `child` and everything it started. Killing only the shell would leave
+/// the script it ran (PowerShell, a curl) running and holding the pipes open.
+fn stop(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // taskkill /T walks the process tree, /F ends processes that ignore a
+        // polite request; without a console window, like the shell itself
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    // elsewhere the shell is the only process we know; on Windows this is the
+    // already killed shell again, and it reaps the child either way
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// The first non-empty line of a script's error output, for a short message.
@@ -281,6 +313,15 @@ mod tests {
     }
 
     #[test]
+    fn clamps_a_too_large_refresh_to_a_week() {
+        let sources = parse_sources(
+            r#"{ "sources": [ { "id": "gh", "command": "x", "refreshMinutes": 100000000 } ] }"#,
+        )
+        .unwrap();
+        assert_eq!(sources[0].refresh_minutes, MAX_REFRESH_MINUTES);
+    }
+
+    #[test]
     fn template_has_no_sources() {
         assert_eq!(parse_sources(TEMPLATE).unwrap(), vec![]);
     }
@@ -334,6 +375,42 @@ mod tests {
         assert_eq!(run_command("echo hello").unwrap().trim(), "hello");
         let err = run_command("echo broken 1>&2 && exit 3").unwrap_err();
         assert_eq!(err, "broken");
+    }
+
+    #[test]
+    fn stops_a_command_that_runs_too_long() {
+        let command = if cfg!(windows) {
+            "ping -n 30 127.0.0.1"
+        } else {
+            "sleep 30"
+        };
+        let started = Instant::now();
+        let err = run_command_with_timeout(command, Duration::from_secs(1)).unwrap_err();
+        assert_eq!(err, "timed out after 1 s");
+        assert!(started.elapsed() < Duration::from_secs(20));
+    }
+
+    /// The timeout must reach what the shell started, not only the shell: a
+    /// detached second shell outlives it and writes the marker after ~2 s.
+    #[cfg(windows)]
+    #[test]
+    fn the_timeout_stops_what_the_shell_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("survived.txt");
+        assert!(
+            !marker.to_string_lossy().contains(' '),
+            "the test writes its marker path unquoted"
+        );
+        let command = format!(
+            "start /B cmd /C \"ping -n 3 127.0.0.1 >nul & echo survived> {}\" & ping -n 30 127.0.0.1 >nul",
+            marker.display()
+        );
+        assert!(run_command_with_timeout(&command, Duration::from_millis(500)).is_err());
+        std::thread::sleep(Duration::from_secs(4));
+        assert!(
+            !marker.exists(),
+            "a process the timed-out command started was still running"
+        );
     }
 
     #[cfg(windows)]

@@ -94,7 +94,7 @@ apply without a restart.
 | `id` | yes | Short name, unique (case is ignored). Shown on the items and in messages, and ties the stored items to the source. Renaming it replaces all its items |
 | `command` | yes | What to run, as you would type it in a terminal. It runs through `cmd /S /C` on Windows and `sh -c` elsewhere, without a console window |
 | `category` | no | Category new items get (default: the `id`). Must be a valid `#tag` name: letters, digits, `_` and `-` |
-| `refreshMinutes` | no | How often the source runs (default 15, at least 1) |
+| `refreshMinutes` | no | How often the source runs (default 15, from 1 to 10080 — a week) |
 
 The parts of a PowerShell `command`:
 
@@ -163,7 +163,7 @@ string counts as missing.
 | `url` that isn't `http(s)`, `due` that can't be read, `notes` that isn't a string | Only that field is dropped |
 | Output is not JSON, or has no `items` list | The run fails |
 | Exit code other than 0 | The run fails; the first non-empty line on **stderr** is shown as the message |
-| Runs longer than 30 seconds | The command is stopped and the run fails |
+| Runs longer than 30 seconds | The command is stopped, with everything it started, and the run fails |
 | More than 5 MB of output | Cut off, so it usually fails as invalid JSON |
 
 When a run fails, the items from the last good run stay, and a red line in
