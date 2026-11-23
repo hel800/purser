@@ -40,6 +40,8 @@ export type PopupAction =
   | "delete"
   | "switchView"
   | "fullView"
+  | "openLink"
+  | "refreshSources"
   | "installUpdate"
   | "help";
 
@@ -91,6 +93,11 @@ export function popupKeyAction(key: string, state: PopupKeyState): KeyResult<Pop
       return act("switchView");
     case "l":
       return act("fullView");
+    case "o":
+      return act("openLink");
+    case "F5":
+      // also keeps the webview from reloading itself
+      return act("refreshSources");
     case "u":
       // Esc stays the window's, so the banner survives hiding the popup
       return state.canInstallUpdate ? act("installUpdate") : IGNORED;

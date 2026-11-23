@@ -5,7 +5,7 @@ import { argsOf, installIpc, type IpcCall } from "./test/ipc";
 import { createDatabase, sqlHandlers } from "./test/sqlite";
 import { freezeAt } from "./test/clock";
 import { TEST_SETTINGS } from "./test/settings";
-import { addTodos, markDone, openTodos, type NewTodo } from "./lib/db";
+import { addTodos, markDone, openTodos, syncSourceItems, type NewTodo } from "./lib/db";
 import type { ViewState } from "./lib/filters";
 import List from "./List.svelte";
 
@@ -251,5 +251,25 @@ describe("List", () => {
     await emit("tauri://blur");
     await emit("tauri://focus");
     await waitFor(() => expect(texts()).toContain("while hidden"));
+  });
+});
+
+describe("data sources", () => {
+  it("shows a source item with a lock, read-only, and opens it on click", async () => {
+    await syncSourceItems("jira", "jira", [
+      { id: "XY-1", text: "XY-1 Fix login", url: "https://jira.example/1", dueAt: null, notes: null },
+    ]);
+    await renderList();
+
+    const row = [...document.querySelectorAll(".todo")].find((r) => r.textContent!.includes("XY-1"))!;
+    expect(row.querySelector(".check.external")).toBeTruthy();
+    expect(row.querySelector(".check:not(.external)")).toBeNull();
+    expect(row.querySelector(".text.readonly")).toBeTruthy();
+    expect(row.querySelector(".check.external")!.getAttribute("title")).toMatch(/Read-only, from jira .* synced /);
+
+    await fireEvent.click(row.querySelector(".check.external")!);
+    expect(argsOf(calls, "plugin:opener|open_url")).toEqual([
+      expect.objectContaining({ url: "https://jira.example/1" }),
+    ]);
   });
 });

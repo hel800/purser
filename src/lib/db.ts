@@ -12,6 +12,18 @@ export interface Todo {
   due_at: string | null;
   created_at: string;
   done_at: string | null;
+  /** Data source the todo is mirrored from; `null` for the user's own todos.
+   *  Mirrored todos are read-only: see `isReadOnly`. */
+  source_id: string | null;
+  /** The item's id within its source. */
+  external_id: string | null;
+  /** Where the item lives, opened by `O` (see `todoLink`). */
+  url: string | null;
+}
+
+/** Whether a todo comes from an external data source and can't be edited here. */
+export function isReadOnly(todo: Pick<Todo, "source_id">): boolean {
+  return todo.source_id !== null;
 }
 
 export interface Category {
@@ -39,7 +51,16 @@ function notifyChanged(): void {
 }
 
 const COLUMNS = `t.id, t.text, t.notes, t.category_id, c.name AS category_name, c.color AS category_color,
-  t.due_at, t.created_at, t.done_at`;
+  t.due_at, t.created_at, t.done_at, t.source_id, t.external_id, t.url`;
+
+/**
+ * Appended to user edits of what a data source owns (text, due date, notes,
+ * done state): those are only changed by the source's sync. The UI already
+ * blocks these edits; this keeps a stray call from changing what the next
+ * refresh would silently undo. The category is the user's: sync never
+ * overwrites it, so it stays editable on mirrored todos too.
+ */
+const OWN_TODO = "AND source_id IS NULL";
 
 const FROM = `FROM todos t LEFT JOIN categories c ON c.id = t.category_id`;
 
@@ -148,10 +169,12 @@ export function todoKey(
   return JSON.stringify([text, category?.toLowerCase() ?? null, dueAt, notes || null]);
 }
 
-/** Keys of all stored todos, open and done. */
+/** Keys of the user's own stored todos, open and done. Mirrored source
+ *  items don't count: an import must not be skipped because the same text
+ *  happens to be in Jira. */
 export async function existingTodoKeys(): Promise<Set<string>> {
   const d = await getDb();
-  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM}`);
+  const rows = await d.select<Todo[]>(`SELECT ${COLUMNS} ${FROM} WHERE t.source_id IS NULL`);
   return new Set(rows.map((t) => todoKey(t.text, t.category_name, t.due_at, t.notes)));
 }
 
@@ -184,19 +207,19 @@ export async function doneTodos(): Promise<Todo[]> {
 
 export async function markDone(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET done_at = $1 WHERE id = $2", [new Date().toISOString(), id]);
+  await d.execute(`UPDATE todos SET done_at = $1 WHERE id = $2 ${OWN_TODO}`, [new Date().toISOString(), id]);
   notifyChanged();
 }
 
 export async function markOpen(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET done_at = NULL WHERE id = $1", [id]);
+  await d.execute(`UPDATE todos SET done_at = NULL WHERE id = $1 ${OWN_TODO}`, [id]);
   notifyChanged();
 }
 
 export async function updateText(id: number, text: string): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET text = $1 WHERE id = $2", [text, id]);
+  await d.execute(`UPDATE todos SET text = $1 WHERE id = $2 ${OWN_TODO}`, [text, id]);
   notifyChanged();
 }
 
@@ -217,19 +240,19 @@ export async function updateTodoCategory(id: number, categoryName: string | null
 
 export async function updateNotes(id: number, notes: string | null): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET notes = $1 WHERE id = $2", [notes || null, id]);
+  await d.execute(`UPDATE todos SET notes = $1 WHERE id = $2 ${OWN_TODO}`, [notes || null, id]);
   notifyChanged();
 }
 
 export async function updateDue(id: number, dueAt: string | null): Promise<void> {
   const d = await getDb();
-  await d.execute("UPDATE todos SET due_at = $1 WHERE id = $2", [dueAt, id]);
+  await d.execute(`UPDATE todos SET due_at = $1 WHERE id = $2 ${OWN_TODO}`, [dueAt, id]);
   notifyChanged();
 }
 
 export async function deleteTodo(id: number): Promise<void> {
   const d = await getDb();
-  await d.execute("DELETE FROM todos WHERE id = $1", [id]);
+  await d.execute(`DELETE FROM todos WHERE id = $1 ${OWN_TODO}`, [id]);
   notifyChanged();
 }
 
@@ -250,4 +273,96 @@ export async function updateCategory(id: number, name: string, color: string): P
     id,
   ]);
   notifyChanged();
+}
+
+/** One item of a data source, already validated (see `parseSourceOutput`). */
+export interface SourceItem {
+  id: string;
+  text: string;
+  url: string | null;
+  dueAt: string | null;
+  notes: string | null;
+}
+
+/** Rows per upsert: 8 parameters each, well below SQLite's limit. */
+const SYNC_CHUNK = 500;
+
+/**
+ * Makes the stored todos of `sourceId` match `items`: new items are added
+ * in `category`, known ones (same id) updated, and items the source no
+ * longer returns are removed, which is how they get "done": the source
+ * closed them. A known item keeps the category the user gave it. Only
+ * called with a complete, successful result, so a failed refresh keeps the
+ * last good items. Returns whether this was the source's first sync ever.
+ */
+export async function syncSourceItems(
+  sourceId: string,
+  category: string | null,
+  items: SourceItem[]
+): Promise<{ firstSync: boolean }> {
+  const d = await getDb();
+  const before = await d.select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM source_syncs WHERE source_id = $1",
+    [sourceId]
+  );
+  const categoryId = category ? await getOrCreateCategory(d, category) : null;
+  const createdAt = new Date().toISOString();
+  try {
+    for (let i = 0; i < items.length; i += SYNC_CHUNK) {
+      const chunk = items.slice(i, i + SYNC_CHUNK);
+      const params: unknown[] = [];
+      const rows = chunk.map((item) => {
+        const n = params.length;
+        params.push(item.text, item.notes, categoryId, item.dueAt, createdAt, sourceId, item.id, item.url);
+        const placeholders = Array.from({ length: 8 }, (_, k) => `$${n + k + 1}`);
+        return `(${placeholders.join(", ")})`;
+      });
+      await d.execute(
+        `INSERT INTO todos (text, notes, category_id, due_at, created_at, source_id, external_id, url)
+           VALUES ${rows.join(", ")}
+           ON CONFLICT (source_id, external_id) DO UPDATE SET
+             text = excluded.text, notes = excluded.notes,
+             due_at = excluded.due_at, url = excluded.url, done_at = NULL`,
+        params
+      );
+    }
+    // the ids go in as one JSON array: a NOT IN list with a parameter per id
+    // could exceed SQLite's parameter limit for a large source
+    await d.execute(
+      `DELETE FROM todos WHERE source_id = $1
+         AND external_id NOT IN (SELECT value FROM json_each($2))`,
+      [sourceId, JSON.stringify(items.map((item) => item.id))]
+    );
+    await d.execute(
+      `INSERT INTO source_syncs (source_id, synced_at) VALUES ($1, $2)
+         ON CONFLICT (source_id) DO UPDATE SET synced_at = excluded.synced_at`,
+      [sourceId, new Date().toISOString()]
+    );
+  } finally {
+    notifyChanged();
+  }
+  return { firstSync: before[0].n === 0 };
+}
+
+/** When each source last synced successfully (ISO time by source id). */
+export async function sourceSyncTimes(): Promise<Record<string, string>> {
+  const d = await getDb();
+  const rows = await d.select<{ source_id: string; synced_at: string }[]>(
+    "SELECT source_id, synced_at FROM source_syncs"
+  );
+  return Object.fromEntries(rows.map((r) => [r.source_id, r.synced_at]));
+}
+
+/** Removes the mirrored todos of sources that are no longer configured. */
+export async function removeOtherSources(configuredIds: string[]): Promise<void> {
+  const d = await getDb();
+  const ids = JSON.stringify(configuredIds);
+  // forgetting the sync too: adding the source again confirms it again
+  await d.execute("DELETE FROM source_syncs WHERE source_id NOT IN (SELECT value FROM json_each($1))", [ids]);
+  const res = await d.execute(
+    `DELETE FROM todos WHERE source_id IS NOT NULL
+       AND source_id NOT IN (SELECT value FROM json_each($1))`,
+    [ids]
+  );
+  if (res.rowsAffected > 0) notifyChanged();
 }

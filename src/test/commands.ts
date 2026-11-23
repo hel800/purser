@@ -2,9 +2,11 @@
 // calls the real backend would: a renamed command or argument would
 // otherwise pass every test and only fail in the app.
 
-const lib = Object.values(
-  import.meta.glob<string>("../../src-tauri/src/lib.rs", { query: "?raw", import: "default", eager: true })
-)[0];
+// every module, so commands declared outside lib.rs (sources.rs) count too
+const rustSources = Object.values(
+  import.meta.glob<string>("../../src-tauri/src/**/*.rs", { query: "?raw", import: "default", eager: true })
+);
+const lib = rustSources.find((source) => source.includes("generate_handler!"))!;
 
 /** Arguments of one command, by the camelCase name Tauri expects from JS. */
 export interface CommandArgs {
@@ -51,15 +53,17 @@ function parseCommands(source: string): Map<string, CommandArgs> {
   return commands;
 }
 
-/** Every `#[tauri::command]` function in lib.rs and its arguments. */
-export const COMMAND_SIGNATURES = parseCommands(lib);
+/** Every `#[tauri::command]` function in the crate and its arguments. */
+export const COMMAND_SIGNATURES = new Map(
+  rustSources.flatMap((source) => [...parseCommands(source)])
+);
 
-/** The commands lib.rs registers in `generate_handler!`. */
+/** The commands lib.rs registers in `generate_handler!`, by bare name. */
 export const REGISTERED_COMMANDS = new Set(
   lib
     .match(/generate_handler!\[([^\]]*)\]/)![1]
     .split(",")
-    .map((name) => name.trim())
+    .map((name) => name.trim().split("::").pop() ?? "")
     .filter(Boolean)
 );
 

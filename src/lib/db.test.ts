@@ -131,6 +131,9 @@ describe("addTodos", () => {
         due_at: due,
         created_at: NOW.toISOString(),
         done_at: null,
+        source_id: null,
+        external_id: null,
+        url: null,
       },
     ]);
     expect(changes).toBe(1);

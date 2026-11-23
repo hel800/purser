@@ -33,6 +33,8 @@ function backend(extra: Record<string, IpcHandler> = {}) {
       get_settings: () => stored,
       check_update: (args) => checkUpdate(args),
       "plugin:app|version": () => "1.2.3",
+      "plugin:window|is_visible": () => true,
+      list_sources: () => [],
       ...extra,
     },
     "main"
@@ -151,7 +153,7 @@ describe("list", () => {
     await key("Tab");
     await waitFor(() => expect(texts()).toEqual(["plan trip"]));
     // checked after the view switch, so a delete from Open had time to land
-    expect(writes("DELETE")).toEqual([]);
+    expect(writes("DELETE FROM todos WHERE id")).toEqual([]);
     expect(await openTodos()).toHaveLength(3);
     await key("Delete");
     await waitFor(() => expect(texts()).toEqual([]));
@@ -696,5 +698,102 @@ describe("updates", () => {
     await emit("purser://check-update");
     await vi.advanceTimersByTimeAsync(0);
     expect(argsOf(calls, "check_update")).toHaveLength(1);
+  });
+});
+
+describe("data sources", () => {
+  const source = { id: "jira", category: "jira", refreshMinutes: 15 };
+  const items = (list: unknown[]) => JSON.stringify({ items: list });
+
+  /** A backend with one `jira` source printing `output` (or failing). */
+  const sourceBackend = (output: string | (() => string), extra: Record<string, IpcHandler> = {}) =>
+    backend({
+      list_sources: () => [source],
+      run_source: typeof output === "function" ? output : () => output,
+      ...extra,
+    });
+
+  it("shows a source's items with a lock and confirms the first sync", async () => {
+    sourceBackend(
+      items([
+        { id: "XY-1", text: "XY-1 Fix login", url: "https://jira.example/browse/XY-1" },
+        { id: "XY-2", text: "XY-2 Add tests" },
+      ])
+    );
+    render(Popup);
+    expect(await screen.findByText("XY-1 Fix login")).toBeTruthy();
+    expect(await screen.findByText(/Data source jira connected/)).toBeTruthy();
+    expect(await screen.findByText(/2 items added/)).toBeTruthy();
+
+    const row = [...document.querySelectorAll(".todo")].find((r) => r.textContent!.includes("XY-1"))!;
+    expect(row.querySelector(".check.external")).toBeTruthy();
+    expect(row.querySelector(".check:not(.external)")).toBeNull();
+    expect(row.classList.contains("readonly")).toBe(true);
+    expect(row.querySelector(".check.external")!.getAttribute("title")).toMatch(/Read-only, from jira .* synced /);
+    expect([...document.querySelectorAll("h2")].some((h) => h.textContent!.includes("jira"))).toBe(true);
+  });
+
+  it("explains why source-owned keys do nothing and leaves the item alone", async () => {
+    sourceBackend(items([{ id: "XY-1", text: "XY-1 Fix login", due: "2026-11-10", notes: "details" }]));
+    render(Popup);
+    await screen.findByText("XY-1 Fix login");
+
+    await key("Enter");
+    expect(await screen.findByText(/Read-only · from jira/)).toBeTruthy();
+    await key("e");
+    expect(editor()).toBeNull();
+    await key("d");
+    expect(editor()).toBeNull();
+    await key("n");
+    expect(editor()).toBeNull();
+
+    const [only] = await openTodos();
+    expect(only).toMatchObject({ text: "XY-1 Fix login", due_at: "2026-11-10", done_at: null });
+    await key(" ");
+    expect(document.querySelector(".notes-text")!.textContent).toBe("details");
+  });
+
+  it("opens a source item's link with the lock and O", async () => {
+    sourceBackend(items([{ id: "XY-1", text: "XY-1 Fix login", url: "https://jira.example/browse/1" }]));
+    render(Popup);
+    await screen.findByText("XY-1 Fix login");
+
+    await fireEvent.click(document.querySelector(".check.external")!);
+    expect(argsOf(calls, "plugin:opener|open_url")).toEqual([
+      expect.objectContaining({ url: "https://jira.example/browse/1" }),
+    ]);
+    await key("o");
+    expect(argsOf(calls, "plugin:opener|open_url")).toHaveLength(2);
+  });
+
+  it("refreshes all sources with F5", async () => {
+    sourceBackend(items([{ id: "XY-1", text: "XY-1 Fix login" }]));
+    render(Popup);
+    await screen.findByText("XY-1 Fix login");
+
+    const before = argsOf(calls, "list_sources").length;
+    await key("F5");
+    await waitFor(() => expect(argsOf(calls, "list_sources").length).toBe(before + 1));
+    expect(await screen.findByText(/Refreshing data sources/)).toBeTruthy();
+  });
+
+  it("shows why a source failed and can dismiss the line", async () => {
+    sourceBackend(() => {
+      throw new Error("401 Unauthorized - check the token");
+    });
+    render(Popup);
+    expect(await screen.findByText(/jira not synced · 401 Unauthorized/)).toBeTruthy();
+    await fireEvent.click(screen.getByTitle("Dismiss"));
+    await waitFor(() => expect(screen.queryByText(/jira not synced/)).toBeNull());
+  });
+
+  it("reports a broken sources.json instead of dropping the items", async () => {
+    backend({
+      list_sources: () => {
+        throw new Error("sources.json is invalid: expected `,` at line 3");
+      },
+    });
+    render(Popup);
+    expect(await screen.findByText(/sources\.json is invalid · /)).toBeTruthy();
   });
 });

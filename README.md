@@ -27,10 +27,12 @@ check. Tray menu → **Check for updates…** looks right away.
 | `D` | Edit due date of the selected open todo (natural language, empty removes it) |
 | `C` | Change the category of the selected open todo |
 | `Space` | Show/hide the notes of the selected todo |
+| `O` | Open the selected todo's link: a [data source](#external-data-sources) item in the browser, otherwise the first link in its notes |
 | `N` | Edit the notes of the selected open todo (`Ctrl+Enter` saves, empty removes) |
 | `T` | Cycle the category filter (all → each category → no category) |
 | `F` | Cycle the due-date filter (all → today → this week → soon/overdue → overdue → no date) |
 | `Tab` | Switch between Open and Done view |
+| `F5` | Refresh all [data sources](#external-data-sources) |
 | `Del` | Done view: delete permanently |
 | `L` | Toggle between the small popup and the full-size view |
 | `Ctrl+P` | Full-size view: print or save as PDF (the small popup points you there) |
@@ -169,6 +171,7 @@ view and filters, and shows every todo with its full text and notes. `L` or
 `Esc` shrinks it back to the small popup; like the popup, it also hides when
 you click elsewhere.
 
+- Todos from a data source show a lock; clicking it opens the item
 - View only, as the pill at the top says: nothing here changes your todos.
   Go back to the small popup to edit. Pressing an edit key (`Enter`, `E`,
   `D`, `C`, `N`, `Del`) or clicking a todo's circle briefly shows
@@ -181,10 +184,26 @@ you click elsewhere.
   text, so the printout works in black and white. The browser's own header
   and footer (date, URL) are left out, whatever the print dialog says
 
+### External data sources
+
+Purser can show items from other systems, such as Jira issues, as read-only
+todos with a gray lock. A data source is a command, configured in
+`sources.json` in the config folder, that prints the items as JSON. A Jira
+Cloud script ships with Purser. `O` opens an item in the browser, `C`
+changes its category, and `F5` refreshes all sources.
+
+Setup, the JSON output format and how to write your own source:
+[docs/data-sources.md](docs/data-sources.md).
+
 ## Data
 
 SQLite database in the app data directory
 (`%APPDATA%\com.sschaefer.purser\purser.db` on Windows).
+
+New versions may extend the database (data sources added a table and three
+columns). An older version fails to open a database that a newer one has
+extended, so going back to an older version needs a copy of `purser.db` from
+before the update.
 
 ## Autostart
 

@@ -64,6 +64,8 @@ describe("popupKeyAction", () => {
     expect(popupKeyAction(" ", empty)).toEqual({ action: "toggleNotes", preventDefault: true });
     expect(action("Tab")).toBe("switchView");
     expect(action("l")).toBe("fullView");
+    expect(action("o")).toBe("openLink");
+    expect(action("F5")).toBe("refreshSources");
     expect(action("?")).toBe("help");
     expect(action("F1")).toBe("help");
     expect(popupKeyAction("x", open)).toEqual({ action: null, preventDefault: false });

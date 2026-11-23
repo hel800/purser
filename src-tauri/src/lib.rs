@@ -12,6 +12,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::Shortcut;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod sources;
 #[cfg(test)]
 mod tests;
 
@@ -25,6 +26,8 @@ const DEFAULT_LIST_SHORTCUT: &str = "ctrl+alt+l";
 /// new file for every schema change.
 const MIGRATION_1_SQL: &str = include_str!("../migrations/0001_create_schema.sql");
 const MIGRATION_2_SQL: &str = include_str!("../migrations/0002_add_notes.sql");
+const MIGRATION_3_SQL: &str = include_str!("../migrations/0003_add_external_source_columns.sql");
+const MIGRATION_4_SQL: &str = include_str!("../migrations/0004_track_data_source_syncs.sql");
 
 /// Import files larger than this are rejected — a todo list is a few KB.
 const MAX_IMPORT_BYTES: u64 = 200 * 1024;
@@ -1245,6 +1248,23 @@ pub fn run() {
             sql: MIGRATION_2_SQL,
             kind: MigrationKind::Up,
         },
+        // Todos mirrored from an external data source: `source_id` names the
+        // source (NULL for the user's own todos, which stay the only editable
+        // ones), `external_id` the item there, `url` where to open it.
+        Migration {
+            version: 3,
+            description: "add external source columns to todos",
+            sql: MIGRATION_3_SQL,
+            kind: MigrationKind::Up,
+        },
+        // when each data source last synced successfully; a source without
+        // a row has never synced, which the popup confirms once
+        Migration {
+            version: 4,
+            description: "track data source syncs",
+            sql: MIGRATION_4_SQL,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1285,9 +1305,12 @@ pub fn run() {
             import_finished,
             check_update,
             install_update,
-            show_app_menu
+            show_app_menu,
+            sources::list_sources,
+            sources::run_source
         ])
         .setup(|app| {
+            sources::ensure_sources_file(app.handle());
             let (settings, first_run) = load_settings(app.handle());
             if first_run {
                 // opt in to autostart once; afterwards the tray setting rules

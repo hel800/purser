@@ -13,6 +13,9 @@ const todo = (id: number, category: { id: number; name: string } | null): Todo =
   due_at: null,
   created_at: "2026-10-01T00:00:00.000Z",
   done_at: null,
+  source_id: null,
+  external_id: null,
+  url: null,
 });
 
 const TODOS = [todo(1, { id: 7, name: "Work" }), todo(2, null)];
